@@ -27,7 +27,7 @@ npm run build
 Run the following commands in PowerShell:
 
 ```powershell
-cd C:\Users\minli\Develop\HuDaGee
+cd C:\Users\ReplaceToYourName\HuDaGee
 npm install
 npm run tauri build
 ```
@@ -81,3 +81,22 @@ winget install Microsoft.VisualStudio.2022.BuildTools
 ```
 
 During installation, select the `Desktop development with C++` workload.
+
+If the build fails with:
+
+```text
+`icons/icon.ico` not found; required for generating a Windows Resource file during tauri-build
+```
+
+Prepare a square PNG icon, such as `app-icon.png`, and generate Tauri icons:
+
+```powershell
+npm run tauri icon app-icon.png
+npm run tauri build
+```
+
+This generates the required Windows icon at:
+
+```text
+src-tauri\icons\icon.ico
+```
