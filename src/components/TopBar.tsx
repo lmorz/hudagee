@@ -1,6 +1,6 @@
 import { Download, FileUp, Lock, Plus, Settings, Trash2 } from "lucide-solid";
-import { For } from "solid-js";
 import type { ServerGroup } from "../types";
+import { ServerSelect } from "./ServerSelect";
 
 type TopBarProps = {
   servers: ServerGroup[];
@@ -21,18 +21,12 @@ export function TopBar(props: TopBarProps) {
   return (
     <header class="topbar">
       <div class="server-picker">
-        <select
+        <ServerSelect
+          servers={props.servers}
           value={props.selectedServerId}
-          onChange={(event) => props.onServerChange(event.currentTarget.value)}
           title="选择分组"
-        >
-          <option value="" disabled>
-            选择分组
-          </option>
-          <For each={props.servers}>
-            {(server) => <option value={server.id}>{server.name}</option>}
-          </For>
-        </select>
+          onChange={props.onServerChange}
+        />
         <button class="icon-button compact" type="button" onClick={props.onDeleteServer} title="删除当前分组">
           <Trash2 size={13} />
         </button>

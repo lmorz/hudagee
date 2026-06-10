@@ -174,6 +174,7 @@ textarea {
   border: 0;
   background: transparent;
   box-shadow: none;
+  width: 300px;
 }
 
 .toolbar,
@@ -240,6 +241,7 @@ textarea {
 .summary-line {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 0.45rem;
   color: #94a3b8;
   font-size: 0.75rem;
@@ -475,30 +477,62 @@ textarea {
 
 .form-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr 1fr 1fr;
   gap: 0.34rem;
 }
 
-.settings-sections {
+.settings-tabs-layout {
   display: grid;
+  grid-template-columns: 7.5rem minmax(0, 1fr);
   gap: 0.55rem;
+  min-height: 14rem;
 }
 
-.settings-section {
+.settings-tabs-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.settings-tab {
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 4px;
+  background: rgba(2, 6, 23, 0.28);
+  color: #94a3b8;
+  font-size: 0.74rem;
+  font-weight: 600;
+  text-align: left;
+  padding: 0.42rem 0.5rem;
+  transition:
+    border-color 150ms ease,
+    background 150ms ease,
+    color 150ms ease;
+}
+
+.settings-tab:hover {
+  border-color: rgba(148, 163, 184, 0.28);
+  color: #e2e8f0;
+}
+
+.settings-tab.is-active {
+  border-color: rgba(56, 189, 248, 0.45);
+  background: rgba(14, 165, 233, 0.14);
+  color: #e0f2fe;
+}
+
+.settings-tab-panel {
   display: grid;
   gap: 0.42rem;
+  align-content: start;
   border: 1px solid rgba(148, 163, 184, 0.16);
   border-radius: 4px;
   background: rgba(2, 6, 23, 0.32);
   padding: 0.58rem;
+  min-width: 0;
 }
 
-.settings-section-head {
-  display: grid;
-  gap: 0.1rem;
-}
-
-.settings-section-head span {
+.settings-tab-desc {
+  margin: 0;
   color: #94a3b8;
   font-size: 0.72rem;
 }
@@ -514,8 +548,10 @@ textarea {
 }
 
 .settings-list-row {
+  position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: 1.8rem minmax(0, 1fr) auto;
+  align-items: center;
   gap: 0.34rem;
 }
 
@@ -664,7 +700,7 @@ textarea:focus {
 .auth-card,
 .floating-panel,
 .dialog-panel,
-.settings-section,
+.settings-tab-panel,
 .account-table {
   border: 1px solid var(--glass-border);
   background:
@@ -694,7 +730,7 @@ textarea:focus {
 .muted,
 .summary-line,
 .panel-title span,
-.settings-section-head span,
+.settings-tab-desc,
 .note-cell {
   color: var(--text-muted);
 }
@@ -843,13 +879,16 @@ textarea:focus {
   cursor: not-allowed;
 }
 
-.account-row.is-dragging {
+.account-row.is-dragging,
+.settings-list-row.is-dragging {
   opacity: 0.46;
   transform: scale(0.992);
 }
 
 .account-row.drop-before::before,
-.account-row.drop-after::after {
+.account-row.drop-after::after,
+.settings-list-row.drop-before::before,
+.settings-list-row.drop-after::after {
   position: absolute;
   right: 0.7rem;
   left: 0.7rem;
@@ -860,11 +899,13 @@ textarea:focus {
   box-shadow: 0 0 14px rgba(34, 211, 238, 0.55);
 }
 
-.account-row.drop-before::before {
+.account-row.drop-before::before,
+.settings-list-row.drop-before::before {
   top: -0.15rem;
 }
 
-.account-row.drop-after::after {
+.account-row.drop-after::after,
+.settings-list-row.drop-after::after {
   bottom: -0.15rem;
 }
 
@@ -904,7 +945,7 @@ textarea:focus {
   padding: 0.82rem;
 }
 
-.settings-section {
+.settings-tab-panel {
   border-radius: 4px;
   background: rgba(2, 6, 23, 0.32);
 }

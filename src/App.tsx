@@ -11,13 +11,14 @@ import { TopBar } from "./components/TopBar";
 import type { AccountEntry, AccountForm, ServerGroup, VaultData, VaultEnvelope } from "./types";
 import { readBackupFile, saveBackupFile } from "./lib/backup";
 import { buildShareText, copyText } from "./lib/clipboard";
+import { readLastSelectedServerId, resolveSelectedServerId, writeLastSelectedServerId } from "./lib/preferences";
 import {
   createAccount,
   createEmptyVault,
   createServer,
   formatVaultMergeSummary,
-  getServerAccountCount,
   mergeVaultData,
+  reorderServers,
   updateAccount,
 } from "./lib/utils";
 import {
@@ -181,7 +182,11 @@ function App() {
       const data = await unlockVault(masterPassword());
       setVault(data);
       setAuthMode("ready");
-      setSelectedServerId(data.servers[0]?.id ?? null);
+      const nextSelectedId = resolveSelectedServerId(data.servers, readLastSelectedServerId());
+      setSelectedServerId(nextSelectedId);
+      if (nextSelectedId) {
+        writeLastSelectedServerId(nextSelectedId);
+      }
       toast.success(authMode() === "setup" ? "保险库已创建" : "已解锁");
     } catch (authError) {
       setError(authError instanceof Error ? authError.message : "解锁失败。");
@@ -210,6 +215,7 @@ function App() {
       servers: [...vault().servers, nextServer],
     });
     setSelectedServerId(nextServer.id);
+    writeLastSelectedServerId(nextServer.id);
     setForm({ ...form(), serverId: nextServer.id });
     setServerName("");
     setError("");
@@ -227,7 +233,11 @@ function App() {
       servers: nextServers,
       accounts: vault().accounts.filter((account) => account.serverId !== server.id),
     });
-    setSelectedServerId(nextServers[0]?.id ?? null);
+    const nextSelectedId = resolveSelectedServerId(nextServers, selectedServerId());
+    setSelectedServerId(nextSelectedId);
+    if (nextSelectedId) {
+      writeLastSelectedServerId(nextSelectedId);
+    }
     setPendingDelete(null);
     toast.success("分组已删除");
   }
@@ -295,6 +305,27 @@ function App() {
     });
     setPendingDelete(null);
     toast.success("账号已删除");
+  }
+
+  async function reorderServer(draggedId: string, targetId: string, placement: "before" | "after") {
+    if (isSavingVault() || isReordering() || draggedId === targetId) {
+      return;
+    }
+
+    const nextServers = reorderServers(vault().servers, draggedId, targetId, placement);
+    if (!nextServers) {
+      return;
+    }
+
+    try {
+      setIsReordering(true);
+      await persist({ ...vault(), servers: nextServers }, false);
+      toast.success("分组顺序已更新");
+    } catch (reorderError) {
+      toast.error(reorderError instanceof Error ? reorderError.message : "分组排序保存失败");
+    } finally {
+      setIsReordering(false);
+    }
   }
 
   async function reorderAccount(draggedId: string, targetId: string, placement: "before" | "after") {
@@ -462,10 +493,11 @@ function App() {
       const { vault: nextVault, summary } = mergeVaultData(vault(), pending.data);
       await persist(nextVault, false);
       const selectedId = selectedServerId();
-      const nextSelectedId = nextVault.servers.some((server) => server.id === selectedId)
-        ? selectedId
-        : nextVault.servers[0]?.id ?? null;
+      const nextSelectedId = resolveSelectedServerId(nextVault.servers, selectedId);
       setSelectedServerId(nextSelectedId);
+      if (nextSelectedId) {
+        writeLastSelectedServerId(nextSelectedId);
+      }
       setPendingImport(null);
       toast.success("备份已合并导入", { description: formatVaultMergeSummary(summary) });
     } catch (mergeError) {
@@ -492,11 +524,12 @@ function App() {
       setIsSavingVault(true);
       await saveVault(pending.data, masterPassword());
       const selectedId = selectedServerId();
-      const nextSelectedId = pending.data.servers.some((server) => server.id === selectedId)
-        ? selectedId
-        : pending.data.servers[0]?.id ?? null;
+      const nextSelectedId = resolveSelectedServerId(pending.data.servers, selectedId);
       setVault(pending.data);
       setSelectedServerId(nextSelectedId);
+      if (nextSelectedId) {
+        writeLastSelectedServerId(nextSelectedId);
+      }
       setEditingId(null);
       setForm({ ...emptyForm, serverId: nextSelectedId ?? "" });
       setIsFormOpen(false);
@@ -664,11 +697,12 @@ function App() {
           <main class="content">
             <TopBar
               servers={sortedServers()}
-              selectedServerId={activeServer()?.id ?? ""}
+              selectedServerId={selectedServerId() ?? ""}
               serverName={serverName()}
               showSettings={showSettings()}
               onServerChange={(serverId) => {
                 setSelectedServerId(serverId);
+                writeLastSelectedServerId(serverId);
                 setForm({ ...form(), serverId });
               }}
               onServerNameInput={setServerName}
@@ -691,12 +725,8 @@ function App() {
                 <input
                   value={query()}
                   onInput={(event) => setQuery(event.currentTarget.value)}
-                  placeholder="搜索"
+                  placeholder="搜索：角色名/账号/职业/备注"
                 />
-              </div>
-              <div class="summary-stats">
-                <span>{filteredAccounts().length} 条账号</span>
-                <span>共 {getServerAccountCount(vault().accounts, activeServer()?.id ?? "")} 条</span>
               </div>
               <button class="primary-button compact" type="button" onClick={startCreateAccount}>
                 <Plus size={13} />
@@ -751,6 +781,10 @@ function App() {
                 onDeleteProfession={deleteProfession}
                 onRenameServer={(serverId, name) => {
                   void renameServer(serverId, name);
+                }}
+                isServerReorderEnabled={!isSavingVault() && !isReordering() && !isImporting()}
+                onReorderServer={(draggedId, targetId, placement) => {
+                  void reorderServer(draggedId, targetId, placement);
                 }}
                 onCurrentMasterPasswordInput={setCurrentMasterPassword}
                 onNextMasterPasswordInput={setNextMasterPassword}

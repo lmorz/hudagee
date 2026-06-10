@@ -1,5 +1,6 @@
 import { For } from "solid-js";
 import type { AccountForm, ServerGroup } from "../types";
+import { ServerSelect } from "./ServerSelect";
 
 type AccountFormPanelProps = {
   form: AccountForm;
@@ -29,17 +30,11 @@ export function AccountFormPanel(props: AccountFormPanelProps) {
         <div class="form-grid">
           <label>
             分组
-            <select
+            <ServerSelect
+              servers={props.servers}
               value={props.form.serverId}
-              onChange={(event) => props.onInput({ ...props.form, serverId: event.currentTarget.value })}
-            >
-              <option value="" disabled>
-                选择分组
-              </option>
-              <For each={props.servers}>
-                {(server) => <option value={server.id}>{server.name}</option>}
-              </For>
-            </select>
+              onChange={(serverId) => props.onInput({ ...props.form, serverId })}
+            />
           </label>
           <label>
             职业

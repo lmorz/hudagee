@@ -122,6 +122,53 @@ export function getServerAccountCount(accounts: AccountEntry[], serverId: string
   return accounts.filter((account) => account.serverId === serverId).length;
 }
 
+export function reorderServers(
+  servers: ServerGroup[],
+  draggedId: string,
+  targetId: string,
+  placement: "before" | "after",
+) {
+  const sorted = [...servers].sort((left, right) => left.sortOrder - right.sortOrder);
+  const dragged = sorted.find((server) => server.id === draggedId);
+  const target = sorted.find((server) => server.id === targetId);
+  if (!dragged || !target || draggedId === targetId) {
+    return null;
+  }
+
+  const withoutDragged = sorted.filter((server) => server.id !== draggedId);
+  const targetIndex = withoutDragged.findIndex((server) => server.id === targetId);
+  if (targetIndex === -1) {
+    return null;
+  }
+
+  const insertIndex = placement === "after" ? targetIndex + 1 : targetIndex;
+  const reordered = [
+    ...withoutDragged.slice(0, insertIndex),
+    dragged,
+    ...withoutDragged.slice(insertIndex),
+  ];
+  if (reordered.every((server, index) => server.id === sorted[index]?.id)) {
+    return null;
+  }
+
+  const timestamp = nowIso();
+  const existingById = new Map(servers.map((server) => [server.id, server]));
+  return reordered.map((server, index) => {
+    const existing = existingById.get(server.id);
+    if (!existing) {
+      return server;
+    }
+    if (existing.sortOrder === index && server.id !== draggedId) {
+      return existing;
+    }
+    return {
+      ...existing,
+      sortOrder: index,
+      updatedAt: server.id === draggedId ? timestamp : existing.updatedAt,
+    };
+  });
+}
+
 export function mergeVaultData(current: VaultData, imported: VaultData): { vault: VaultData; summary: VaultMergeSummary } {
   const timestamp = nowIso();
   const serversByName = new Map<string, ServerGroup[]>();
