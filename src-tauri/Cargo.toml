@@ -1,7 +1,7 @@
 [package]
 name = "hudagee"
-version = "0.1.0"
-description = "离线游戏账号管理工具"
+version = "1.0.0"
+description = "离线账号管理工具"
 authors = ["HuDaGee"]
 edition = "2021"
 

@@ -7,7 +7,10 @@
     "dev": "vite",
     "tauri": "tauri",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "build:tauri": "npm run sync:cargo-version && npm run build",
+    "preview": "vite preview",
+    "sync:cargo-version": "node scripts/sync-cargo-version.mjs",
+    "postversion": "node scripts/sync-cargo-version.mjs"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.11.2",
