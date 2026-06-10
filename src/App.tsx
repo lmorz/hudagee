@@ -1,4 +1,4 @@
-import { Plus, Search } from "lucide-solid";
+import { ClipboardPaste, Plus, Search } from "lucide-solid";
 import { createEffect, createMemo, createSignal, Match, Show, Switch } from "solid-js";
 import { Toaster, toast } from "solid-sonner";
 import { AccountFormPanel } from "./components/AccountFormPanel";
@@ -10,12 +10,14 @@ import { SettingsPanel } from "./components/SettingsPanel";
 import { TopBar } from "./components/TopBar";
 import type { AccountEntry, AccountForm, ServerGroup, VaultData, VaultEnvelope } from "./types";
 import { readBackupFile, saveBackupFile } from "./lib/backup";
-import { buildShareText, copyText } from "./lib/clipboard";
+import { buildShareText, copyText, parseShareText, readClipboardText } from "./lib/clipboard";
 import { readLastSelectedServerId, resolveSelectedServerId, writeLastSelectedServerId } from "./lib/preferences";
+import { revealMainWindow } from "./lib/tauri";
 import {
   createAccount,
   createEmptyVault,
   createServer,
+  findDuplicateAccount,
   formatVaultMergeSummary,
   mergeVaultData,
   reorderServers,
@@ -79,6 +81,19 @@ function App() {
     void (async () => {
       setAuthMode((await hasVault()) ? "unlock" : "setup");
     })();
+  });
+
+  createEffect(() => {
+    if (authMode() === "loading") {
+      return;
+    }
+
+    // 等 Solid 绘制完成后再显示窗口，避免白屏或启动占位一闪而过
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        revealMainWindow();
+      });
+    });
   });
 
   const sortedServers = createMemo(() =>
@@ -249,12 +264,27 @@ function App() {
     }
 
     const payload = form();
-    if (!payload.serverId || !payload.characterName || !payload.username || !payload.password) {
+    if (
+      !payload.serverId ||
+      !payload.characterName.trim() ||
+      !payload.username.trim() ||
+      !payload.password
+    ) {
       toast.error("分组、角色名、账号和密码为必填");
       return;
     }
 
     const currentEditingId = editingId();
+    const conflict = findDuplicateAccount(vault().accounts, payload, currentEditingId);
+    if (conflict === "characterName") {
+      toast.error("该分组下已存在相同角色名");
+      return;
+    }
+    if (conflict === "username") {
+      toast.error("该分组下已存在相同账号");
+      return;
+    }
+
     const nextAccounts = currentEditingId
       ? vault().accounts.map((account) =>
           account.id === currentEditingId ? updateAccount(account, payload) : account,
@@ -273,6 +303,39 @@ function App() {
     setEditingId(null);
     setForm({ ...emptyForm, serverId: activeServer()?.id ?? "" });
     setIsFormOpen(true);
+  }
+
+  async function startQuickAddAccount() {
+    if (isWriteBlocked()) {
+      return;
+    }
+
+    try {
+      const parsed = parseShareText(await readClipboardText());
+      if (!parsed) {
+        toast.error("剪贴板内容无法识别，请先复制分享信息");
+        return;
+      }
+
+      setEditingId(null);
+      setForm({
+        serverId: activeServer()?.id ?? "",
+        characterName: parsed.characterName,
+        username: parsed.username,
+        password: parsed.password,
+        profession: parsed.profession,
+        note: "",
+      });
+      setIsFormOpen(true);
+
+      if (parsed.profession && !vault().professions.includes(parsed.profession)) {
+        toast.info("职业尚未配置", { description: `请先在配置中添加「${parsed.profession}」或手动选择` });
+      } else {
+        toast.success("已从剪贴板填充账号信息");
+      }
+    } catch (clipboardError) {
+      toast.error(clipboardError instanceof Error ? clipboardError.message : "读取剪贴板失败");
+    }
   }
 
   function startEdit(account: AccountEntry) {
@@ -728,10 +791,23 @@ function App() {
                   placeholder="搜索：角色名/账号/职业/备注"
                 />
               </div>
-              <button class="primary-button compact" type="button" onClick={startCreateAccount}>
-                <Plus size={13} />
-                添加账号
-              </button>
+              <div class="summary-actions">
+                <button
+                  class="ghost-button compact"
+                  type="button"
+                  onClick={() => {
+                    void startQuickAddAccount();
+                  }}
+                  title="从剪贴板粘贴分享信息"
+                >
+                  <ClipboardPaste size={13} />
+                  快捷添加
+                </button>
+                <button class="primary-button compact" type="button" onClick={startCreateAccount}>
+                  <Plus size={13} />
+                  添加账号
+                </button>
+              </div>
             </div>
 
             <AccountList

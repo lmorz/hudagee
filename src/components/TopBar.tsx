@@ -52,11 +52,11 @@ export function TopBar(props: TopBarProps) {
           <Settings size={13} />
           配置
         </button>
-        <button class="ghost-button compact icon-only" type="button" onClick={props.onImport} title="导入">
-          <FileUp size={13} />
+        <button class="ghost-button compact" type="button" onClick={props.onImport}>
+          <FileUp size={13} />导入
         </button>
-        <button class="ghost-button compact icon-only" type="button" onClick={props.onExport} title="导出">
-          <Download size={13} />
+        <button class="ghost-button compact" type="button" onClick={props.onExport}>
+          <Download size={13} />导出
         </button>
         <button class="ghost-button compact icon-only" type="button" onClick={props.onLock} title="锁定">
           <Lock size={13} />

@@ -46,12 +46,40 @@ function normalizeName(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
-function accountMergeKey(serverId: string, account: AccountEntry) {
-  return [
-    serverId,
-    normalizeName(account.characterName),
-    normalizeName(account.username),
-  ].join("\u0000");
+function characterNameKey(serverId: string, characterName: string) {
+  return [serverId, normalizeName(characterName)].join("\u0000");
+}
+
+function usernameKey(serverId: string, username: string) {
+  return [serverId, normalizeName(username)].join("\u0000");
+}
+
+export type AccountDuplicateConflict = "characterName" | "username";
+
+export function findDuplicateAccount(
+  accounts: AccountEntry[],
+  form: AccountForm,
+  excludeAccountId?: string | null,
+): AccountDuplicateConflict | undefined {
+  const characterName = normalizeName(form.characterName);
+  const username = normalizeName(form.username);
+  if (!characterName || !username) {
+    return undefined;
+  }
+
+  for (const account of accounts) {
+    if (account.id === excludeAccountId || account.serverId !== form.serverId) {
+      continue;
+    }
+    if (normalizeName(account.characterName) === characterName) {
+      return "characterName";
+    }
+    if (normalizeName(account.username) === username) {
+      return "username";
+    }
+  }
+
+  return undefined;
 }
 
 function createUniqueServerName(name: string, usedNames: Set<string>) {
@@ -222,8 +250,11 @@ export function mergeVaultData(current: VaultData, imported: VaultData): { vault
     const serverName = normalizeName(server.name);
     serverIdsByName.set(serverName, [...(serverIdsByName.get(serverName) ?? []), server.id]);
   }
-  const accountKeys = new Set(
-    current.accounts.map((account) => accountMergeKey(account.serverId, account)),
+  const characterNameKeys = new Set(
+    current.accounts.map((account) => characterNameKey(account.serverId, account.characterName)),
+  );
+  const usernameKeys = new Set(
+    current.accounts.map((account) => usernameKey(account.serverId, account.username)),
   );
   const nextAccounts = [...current.accounts];
   let addedAccounts = 0;
@@ -255,15 +286,18 @@ export function mergeVaultData(current: VaultData, imported: VaultData): { vault
     };
     // 与所有同名分组（含历史遗留的重名分组）下的账号判重，避免逻辑重复
     const siblingServerIds = serverIdsByName.get(normalizeName(mergedServer.name)) ?? [mergedServer.id];
-    const isDuplicate = siblingServerIds.some((serverId) =>
-      accountKeys.has(accountMergeKey(serverId, nextAccount)),
+    const isDuplicate = siblingServerIds.some(
+      (serverId) =>
+        characterNameKeys.has(characterNameKey(serverId, characterName)) ||
+        usernameKeys.has(usernameKey(serverId, username)),
     );
     if (isDuplicate) {
       skippedAccounts += 1;
       continue;
     }
 
-    accountKeys.add(accountMergeKey(mergedServer.id, nextAccount));
+    characterNameKeys.add(characterNameKey(mergedServer.id, characterName));
+    usernameKeys.add(usernameKey(mergedServer.id, username));
     nextAccounts.push(nextAccount);
     addedAccounts += 1;
   }

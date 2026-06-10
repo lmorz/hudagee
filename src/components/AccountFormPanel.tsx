@@ -1,4 +1,4 @@
-import { For } from "solid-js";
+import { For, Show } from "solid-js";
 import type { AccountForm, ServerGroup } from "../types";
 import { ServerSelect } from "./ServerSelect";
 
@@ -46,6 +46,9 @@ export function AccountFormPanel(props: AccountFormPanelProps) {
               <For each={props.professions}>
                 {(profession) => <option value={profession}>{profession}</option>}
               </For>
+              <Show when={props.form.profession && !props.professions.includes(props.form.profession)}>
+                <option value={props.form.profession}>{props.form.profession}</option>
+              </Show>
             </select>
           </label>
           <label>
