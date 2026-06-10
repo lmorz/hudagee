@@ -139,6 +139,17 @@ textarea {
   color: #fca5a5;
 }
 
+.auth-actions {
+  display: grid;
+  gap: 0.45rem;
+  margin-top: 0.15rem;
+}
+
+.auth-actions .primary-button,
+.auth-actions .ghost-button {
+  width: 100%;
+}
+
 .app-shell {
   min-height: 100vh;
 }

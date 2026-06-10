@@ -33,6 +33,15 @@ fn write_vault(app: AppHandle, contents: String) -> Result<(), String> {
     fs::write(path, contents).map_err(|error| format!("无法写入本地保险库：{error}"))
 }
 
+#[tauri::command]
+fn delete_vault(app: AppHandle) -> Result<(), String> {
+    let path = vault_path(&app)?;
+    if path.exists() {
+        fs::remove_file(path).map_err(|error| format!("无法删除本地保险库：{error}"))?;
+    }
+    Ok(())
+}
+
 fn show_main_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.show();
@@ -55,7 +64,7 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
-        .invoke_handler(tauri::generate_handler![read_vault, write_vault])
+        .invoke_handler(tauri::generate_handler![read_vault, write_vault, delete_vault])
         .setup(|app| {
             let show = MenuItem::with_id(app, "show", "显示主界面", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;

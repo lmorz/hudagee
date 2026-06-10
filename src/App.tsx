@@ -8,7 +8,7 @@ import { ConfirmDialog } from "./components/ConfirmDialog";
 import { ImportModeDialog } from "./components/ImportModeDialog";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { TopBar } from "./components/TopBar";
-import type { AccountEntry, AccountForm, ServerGroup, VaultData, VaultEnvelope } from "./types";
+import type { AccountEntry, AccountForm, ServerGroup, VaultData } from "./types";
 import { readBackupFile, saveBackupFile } from "./lib/backup";
 import { buildShareText, copyText, parseShareText, readClipboardText } from "./lib/clipboard";
 import { readLastSelectedServerId, resolveSelectedServerId, writeLastSelectedServerId } from "./lib/preferences";
@@ -24,22 +24,35 @@ import {
   updateAccount,
 } from "./lib/utils";
 import {
+  BACKUP_INVALID_FORMAT_MESSAGE,
+  BACKUP_WRONG_PASSWORD_MESSAGE,
+  deleteVaultStorage,
   exportVaultBackup,
   hasVault,
+  openVaultBackup,
   parseVaultBackup,
+  restoreVaultFromBackup,
   saveVault,
   unlockVault,
 } from "./lib/vault";
 
-type AuthMode = "loading" | "setup" | "unlock" | "ready";
+type AuthMode = "loading" | "setup" | "unlock" | "ready" | "corrupted";
 type PendingDelete =
   | { type: "server"; server: ServerGroup }
   | { type: "account"; account: AccountEntry }
   | null;
-type PendingImport = {
-  envelope: VaultEnvelope;
-  data: VaultData;
-} | null;
+type ImportDialogState =
+  | {
+      stage: "password";
+      raw: string;
+      backupPassword: string;
+      error: string;
+    }
+  | {
+      stage: "mode";
+      data: VaultData;
+    }
+  | null;
 
 const emptyForm: AccountForm = {
   serverId: "",
@@ -71,15 +84,31 @@ function App() {
   const [showPasswordColumn, setShowPasswordColumn] = createSignal(false);
   const [showUsernameColumn, setShowUsernameColumn] = createSignal(false);
   const [pendingDelete, setPendingDelete] = createSignal<PendingDelete>(null);
-  const [pendingImport, setPendingImport] = createSignal<PendingImport>(null);
+  const [importDialog, setImportDialog] = createSignal<ImportDialogState>(null);
   const [isImporting, setIsImporting] = createSignal(false);
   const [isSavingVault, setIsSavingVault] = createSignal(false);
   const [isReordering, setIsReordering] = createSignal(false);
+  const [pendingRecreate, setPendingRecreate] = createSignal(false);
   const [error, setError] = createSignal("");
+
+  const passwordImportDialog = createMemo(() => {
+    const dialog = importDialog();
+    return dialog?.stage === "password" ? dialog : undefined;
+  });
+
+  const modeImportDialog = createMemo(() => {
+    const dialog = importDialog();
+    return dialog?.stage === "mode" ? dialog : undefined;
+  });
 
   createEffect(() => {
     void (async () => {
-      setAuthMode((await hasVault()) ? "unlock" : "setup");
+      try {
+        setAuthMode((await hasVault()) ? "unlock" : "setup");
+      } catch {
+        setError("");
+        setAuthMode("corrupted");
+      }
     })();
   });
 
@@ -177,6 +206,56 @@ function App() {
     }
 
     return false;
+  }
+
+  async function restoreFromCorruptedBackup() {
+    if (isImporting()) {
+      return;
+    }
+
+    const backupPassword = masterPassword();
+    if (backupPassword.length < 1) {
+      setError("请先输入备份主密码。");
+      return;
+    }
+
+    try {
+      setIsImporting(true);
+      setError("");
+      const raw = await readBackupFile();
+      if (!raw) {
+        return;
+      }
+
+      const data = await restoreVaultFromBackup(raw, backupPassword, backupPassword);
+      setVault(data);
+      setAuthMode("ready");
+      const nextSelectedId = resolveSelectedServerId(data.servers, readLastSelectedServerId());
+      setSelectedServerId(nextSelectedId);
+      if (nextSelectedId) {
+        writeLastSelectedServerId(nextSelectedId);
+      }
+      toast.success("已从备份恢复", { description: "请使用备份主密码解锁保险库。" });
+    } catch (restoreError) {
+      setError(restoreError instanceof Error ? restoreError.message : "恢复失败。");
+    } finally {
+      setIsImporting(false);
+    }
+  }
+
+  async function confirmRecreateVault() {
+    try {
+      await deleteVaultStorage();
+      setMasterPassword("");
+      setConfirmPassword("");
+      setError("");
+      setPendingRecreate(false);
+      setAuthMode("setup");
+      toast.info("请设置新的主密码以创建保险库");
+    } catch (recreateError) {
+      setPendingRecreate(false);
+      setError(recreateError instanceof Error ? recreateError.message : "无法删除损坏的保险库。");
+    }
   }
 
   async function handleAuth(event: Event) {
@@ -313,7 +392,7 @@ function App() {
     try {
       const parsed = parseShareText(await readClipboardText());
       if (!parsed) {
-        toast.error("剪贴板内容无法识别，请先复制分享信息");
+        toast.error("剪贴板内容无法识别，请先确保复制了分享格式的账号信息");
         return;
       }
 
@@ -519,7 +598,7 @@ function App() {
   }
 
   async function importBackup() {
-    if (pendingImport() || isImporting()) {
+    if (importDialog() || isImporting()) {
       toast.info("请先完成当前导入操作");
       return;
     }
@@ -530,18 +609,56 @@ function App() {
       if (!raw) {
         return;
       }
-      const { envelope, data } = await parseVaultBackup(raw, masterPassword());
-      setPendingImport({ envelope, data });
-    } catch (importError) {
-      toast.error(importError instanceof Error ? importError.message : "导入失败");
+
+      try {
+        const { data } = await parseVaultBackup(raw, masterPassword());
+        setImportDialog({ stage: "mode", data });
+      } catch (importError) {
+        const message = importError instanceof Error ? importError.message : "导入失败";
+        if (message === BACKUP_INVALID_FORMAT_MESSAGE) {
+          toast.error(message);
+          return;
+        }
+
+        setImportDialog({
+          stage: "password",
+          raw,
+          backupPassword: "",
+          error: "备份主密码与当前保险库不一致，请输入导出备份时使用的主密码。",
+        });
+      }
+    } catch (readError) {
+      toast.error(readError instanceof Error ? readError.message : "导入失败");
+    } finally {
+      setIsImporting(false);
+    }
+  }
+
+  async function confirmImportBackupPassword() {
+    const dialog = importDialog();
+    if (!dialog || dialog.stage !== "password" || isImporting()) {
+      return;
+    }
+
+    if (dialog.backupPassword.length < 1) {
+      setImportDialog({ ...dialog, error: "请输入备份主密码。" });
+      return;
+    }
+
+    try {
+      setIsImporting(true);
+      const data = await openVaultBackup(dialog.raw, dialog.backupPassword);
+      setImportDialog({ stage: "mode", data });
+    } catch {
+      setImportDialog({ ...dialog, error: BACKUP_WRONG_PASSWORD_MESSAGE });
     } finally {
       setIsImporting(false);
     }
   }
 
   async function mergePendingImport() {
-    const pending = pendingImport();
-    if (!pending) {
+    const dialog = importDialog();
+    if (!dialog || dialog.stage !== "mode") {
       return;
     }
     if (isImporting()) {
@@ -553,7 +670,7 @@ function App() {
 
     try {
       setIsImporting(true);
-      const { vault: nextVault, summary } = mergeVaultData(vault(), pending.data);
+      const { vault: nextVault, summary } = mergeVaultData(vault(), dialog.data);
       await persist(nextVault, false);
       const selectedId = selectedServerId();
       const nextSelectedId = resolveSelectedServerId(nextVault.servers, selectedId);
@@ -561,7 +678,7 @@ function App() {
       if (nextSelectedId) {
         writeLastSelectedServerId(nextSelectedId);
       }
-      setPendingImport(null);
+      setImportDialog(null);
       toast.success("备份已合并导入", { description: formatVaultMergeSummary(summary) });
     } catch (mergeError) {
       toast.error(mergeError instanceof Error ? mergeError.message : "合并导入失败");
@@ -571,8 +688,8 @@ function App() {
   }
 
   async function replaceWithPendingImport() {
-    const pending = pendingImport();
-    if (!pending) {
+    const dialog = importDialog();
+    if (!dialog || dialog.stage !== "mode") {
       return;
     }
     if (isImporting()) {
@@ -585,10 +702,10 @@ function App() {
     try {
       setIsImporting(true);
       setIsSavingVault(true);
-      await saveVault(pending.data, masterPassword());
+      await saveVault(dialog.data, masterPassword());
       const selectedId = selectedServerId();
-      const nextSelectedId = resolveSelectedServerId(pending.data.servers, selectedId);
-      setVault(pending.data);
+      const nextSelectedId = resolveSelectedServerId(dialog.data.servers, selectedId);
+      setVault(dialog.data);
       setSelectedServerId(nextSelectedId);
       if (nextSelectedId) {
         writeLastSelectedServerId(nextSelectedId);
@@ -597,7 +714,7 @@ function App() {
       setForm({ ...emptyForm, serverId: nextSelectedId ?? "" });
       setIsFormOpen(false);
       setPendingDelete(null);
-      setPendingImport(null);
+      setImportDialog(null);
       toast.success("已覆盖恢复备份");
     } catch (replaceError) {
       toast.error(replaceError instanceof Error ? replaceError.message : "覆盖恢复失败");
@@ -709,7 +826,7 @@ function App() {
     if (isWriteBlocked()) {
       return;
     }
-    if (pendingImport()) {
+    if (importDialog()) {
       toast.info("请先完成或取消当前导入操作");
       return;
     }
@@ -721,7 +838,7 @@ function App() {
     setNextMasterPassword("");
     setConfirmNextMasterPassword("");
     setSelectedServerId(null);
-    setPendingImport(null);
+    setImportDialog(null);
     setIsImporting(false);
     setAuthMode("unlock");
     toast.info("应用已锁定");
@@ -729,7 +846,7 @@ function App() {
 
   return (
     <>
-      <Toaster position="bottom-right" richColors duration={2600} visibleToasts={2} gap={6} offset={8} />
+      <Toaster position="top-center" richColors duration={2600} visibleToasts={2} gap={6} offset={8} />
       <Switch>
         <Match when={authMode() === "loading"}>
           <AuthView
@@ -752,6 +869,20 @@ function App() {
             onMasterPasswordInput={setMasterPassword}
             onConfirmPasswordInput={setConfirmPassword}
             onSubmit={handleAuth}
+          />
+        </Match>
+
+        <Match when={authMode() === "corrupted"}>
+          <AuthView
+            mode="corrupted"
+            error={error()}
+            masterPassword={masterPassword()}
+            isBusy={isImporting()}
+            onMasterPasswordInput={setMasterPassword}
+            onRestoreFromBackup={() => {
+              void restoreFromCorruptedBackup();
+            }}
+            onRecreateVault={() => setPendingRecreate(true)}
           />
         </Match>
 
@@ -798,7 +929,7 @@ function App() {
                   onClick={() => {
                     void startQuickAddAccount();
                   }}
-                  title="从剪贴板粘贴分享信息"
+                  title="从剪贴板读取账号信息快速添加（点击已存在账号右侧分享按钮，再点这个按钮试试）"
                 >
                   <ClipboardPaste size={13} />
                   快捷添加
@@ -879,8 +1010,34 @@ function App() {
               />
             </Show>
 
-            <Show when={pendingImport()}>
+            <Show when={passwordImportDialog()}>
+              {(dialog) => (
+                <ImportModeDialog
+                  stage="password"
+                  isBusy={isImporting()}
+                  backupPassword={dialog().backupPassword}
+                  error={dialog().error}
+                  onBackupPasswordInput={(value) => {
+                    const current = importDialog();
+                    if (current?.stage === "password") {
+                      setImportDialog({ ...current, backupPassword: value, error: "" });
+                    }
+                  }}
+                  onConfirmPassword={() => {
+                    void confirmImportBackupPassword();
+                  }}
+                  onCancel={() => {
+                    if (!isImporting()) {
+                      setImportDialog(null);
+                    }
+                  }}
+                />
+              )}
+            </Show>
+
+            <Show when={modeImportDialog()}>
               <ImportModeDialog
+                stage="mode"
                 isBusy={isImporting()}
                 onMerge={() => {
                   void mergePendingImport();
@@ -890,7 +1047,7 @@ function App() {
                 }}
                 onCancel={() => {
                   if (!isImporting()) {
-                    setPendingImport(null);
+                    setImportDialog(null);
                   }
                 }}
               />
@@ -899,6 +1056,18 @@ function App() {
         </div>
       </Match>
       </Switch>
+
+      <Show when={pendingRecreate()}>
+        <ConfirmDialog
+          title="重新创建保险库"
+          description="将删除损坏的本地保险库文件，当前数据无法恢复。请确认已备份或不再需要旧数据。"
+          confirmText="重新创建"
+          onConfirm={() => {
+            void confirmRecreateVault();
+          }}
+          onCancel={() => setPendingRecreate(false)}
+        />
+      </Show>
     </>
   );
 }

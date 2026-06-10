@@ -3,6 +3,9 @@ import type { VaultData, VaultEnvelope } from "../types";
 import { createEmptyVault, normalizeVault } from "./utils";
 
 const LOCAL_STORAGE_KEY = "hudagee.encryptedVault";
+export const VAULT_CORRUPTED_MESSAGE = "保险库数据已损坏，请从备份恢复或重新创建";
+export const BACKUP_INVALID_FORMAT_MESSAGE = "备份文件格式无效，请选择正确的 HuDaGee 加密备份。";
+export const BACKUP_WRONG_PASSWORD_MESSAGE = "备份主密码不正确。";
 const ITERATIONS = 310_000;
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -93,14 +96,31 @@ export async function decryptVault(envelope: VaultEnvelope, masterPassword: stri
   }
 }
 
+function parseVaultEnvelope(raw: string): VaultEnvelope {
+  try {
+    return JSON.parse(raw) as VaultEnvelope;
+  } catch {
+    throw new Error(VAULT_CORRUPTED_MESSAGE);
+  }
+}
+
 export async function readVaultEnvelope(): Promise<VaultEnvelope | null> {
   if (isTauriRuntime()) {
     const raw = await invoke<string | null>("read_vault");
-    return raw ? (JSON.parse(raw) as VaultEnvelope) : null;
+    return raw ? parseVaultEnvelope(raw) : null;
   }
 
   const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
-  return raw ? (JSON.parse(raw) as VaultEnvelope) : null;
+  return raw ? parseVaultEnvelope(raw) : null;
+}
+
+export async function deleteVaultStorage() {
+  if (isTauriRuntime()) {
+    await invoke("delete_vault");
+    return;
+  }
+
+  localStorage.removeItem(LOCAL_STORAGE_KEY);
 }
 
 export async function writeVaultEnvelope(envelope: VaultEnvelope) {
@@ -144,16 +164,37 @@ export async function exportVaultBackup(data: VaultData, masterPassword: string)
   return JSON.stringify(await encryptVault(data, masterPassword), null, 2);
 }
 
-export async function parseVaultBackup(raw: string, masterPassword: string) {
-  const envelope = JSON.parse(raw) as VaultEnvelope;
+function parseVaultBackupEnvelope(raw: string): VaultEnvelope {
+  try {
+    return JSON.parse(raw) as VaultEnvelope;
+  } catch {
+    throw new Error(BACKUP_INVALID_FORMAT_MESSAGE);
+  }
+}
+
+export async function openVaultBackup(raw: string, backupPassword: string): Promise<VaultData> {
+  const envelope = parseVaultBackupEnvelope(raw);
+  return decryptVault(envelope, backupPassword);
+}
+
+export async function restoreVaultFromBackup(
+  raw: string,
+  backupPassword: string,
+  localPassword: string,
+): Promise<VaultData> {
+  const data = await openVaultBackup(raw, backupPassword);
+  await saveVault(data, localPassword);
+  return data;
+}
+
+export async function parseVaultBackup(raw: string, backupPassword: string) {
+  const envelope = parseVaultBackupEnvelope(raw);
   return {
     envelope,
-    data: await decryptVault(envelope, masterPassword),
+    data: await decryptVault(envelope, backupPassword),
   };
 }
 
 export async function importVaultBackup(raw: string, masterPassword: string) {
-  const { envelope, data } = await parseVaultBackup(raw, masterPassword);
-  await writeVaultEnvelope(envelope);
-  return data;
+  return restoreVaultFromBackup(raw, masterPassword, masterPassword);
 }
