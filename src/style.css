@@ -48,7 +48,7 @@ select,
 textarea {
   width: 100%;
   border: 1px solid rgba(148, 163, 184, 0.28);
-  border-radius: 0.38rem;
+  border-radius: 4px;
   outline: none;
   background: rgba(15, 23, 42, 0.86);
   color: #f8fafc;
@@ -78,7 +78,7 @@ textarea {
   width: min(100%, 22rem);
   gap: 0.65rem;
   border: 1px solid rgba(148, 163, 184, 0.22);
-  border-radius: 0.85rem;
+  border-radius: 4px;
   background: rgba(15, 23, 42, 0.92);
   padding: 1rem;
 }
@@ -94,7 +94,7 @@ textarea {
   width: 2.7rem;
   height: 2.7rem;
   place-items: center;
-  border-radius: 0.7rem;
+  border-radius: 4px;
   background: linear-gradient(135deg, #2563eb, #14b8a6);
   color: #fff;
 }
@@ -136,7 +136,7 @@ textarea {
 
 .topbar {
   display: grid;
-  grid-template-columns: minmax(12rem, 1fr) minmax(12rem, 1fr) auto;
+  grid-template-columns: auto auto 1fr;
   align-items: center;
   gap: 0.3rem;
 }
@@ -151,7 +151,12 @@ textarea {
 
 .server-picker,
 .server-form {
-  grid-template-columns: minmax(0, 1fr) 1.6rem;
+  grid-template-columns: minmax(0, 200px) 1.6rem;
+}
+
+.server-picker select,
+.server-form input {
+  max-width: 200px;
 }
 
 .search-box {
@@ -159,7 +164,7 @@ textarea {
   align-items: center;
   gap: 0.25rem;
   border: 1px solid rgba(148, 163, 184, 0.22);
-  border-radius: 0.38rem;
+  border-radius: 4px;
   background: rgba(15, 23, 42, 0.72);
   color: #94a3b8;
   padding-left: 0.35rem;
@@ -178,6 +183,10 @@ textarea {
   gap: 0.2rem;
 }
 
+.topbar > .toolbar {
+  justify-self: end;
+}
+
 .primary-button,
 .ghost-button,
 .danger-button,
@@ -187,7 +196,7 @@ textarea {
   justify-content: center;
   gap: 0.22rem;
   border: 0;
-  border-radius: 0.38rem;
+  border-radius: 4px;
   min-height: 1.62rem;
   padding: 0.26rem 0.44rem;
   font-weight: 700;
@@ -213,7 +222,7 @@ textarea {
 
 .compact {
   min-height: 1.42rem;
-  border-radius: 0.32rem;
+  border-radius: 4px;
   padding: 0.14rem 0.32rem;
   font-size: 0.72rem;
 }
@@ -255,7 +264,7 @@ textarea {
 
 .summary-line span,
 .top-hint {
-  border-radius: 999px;
+  border-radius: 4px;
   background: rgba(59, 130, 246, 0.14);
   color: #bfdbfe;
   padding: 0.1rem 0.34rem;
@@ -286,7 +295,7 @@ textarea {
   width: 100%;
   gap: 0.24rem;
   border: 1px solid rgba(148, 163, 184, 0.14);
-  border-radius: 0.28rem;
+  border-radius: 4px;
   background: rgba(2, 6, 23, 0.42);
   min-height: 1.75rem;
   padding: 0.12rem 0.26rem;
@@ -363,7 +372,7 @@ textarea {
   flex: none;
   max-width: 4.5rem;
   border: 1px solid rgba(56, 189, 248, 0.22);
-  border-radius: 999px;
+  border-radius: 4px;
   background: rgba(14, 165, 233, 0.12);
   color: #bae6fd;
   font-size: 0.62rem;
@@ -408,7 +417,7 @@ textarea {
   top: 2.28rem;
   width: 20rem;
   border: 1px solid rgba(148, 163, 184, 0.22);
-  border-radius: 0.5rem;
+  border-radius: 4px;
   background: rgba(15, 23, 42, 0.97);
   box-shadow: 0 18px 50px rgba(0, 0, 0, 0.35);
   padding: 0.5rem;
@@ -427,7 +436,7 @@ textarea {
 .dialog-panel {
   width: min(30rem, calc(100vw - 2rem));
   border: 1px solid rgba(148, 163, 184, 0.24);
-  border-radius: 0.58rem;
+  border-radius: 4px;
   background: rgba(15, 23, 42, 0.98);
   box-shadow: 0 22px 70px rgba(0, 0, 0, 0.45);
   padding: 0.65rem;
@@ -479,7 +488,7 @@ textarea {
   display: grid;
   gap: 0.42rem;
   border: 1px solid rgba(148, 163, 184, 0.16);
-  border-radius: 0.48rem;
+  border-radius: 4px;
   background: rgba(2, 6, 23, 0.32);
   padding: 0.58rem;
 }
@@ -526,7 +535,7 @@ textarea {
   align-items: center;
   gap: 0.16rem;
   border: 1px solid rgba(148, 163, 184, 0.2);
-  border-radius: 999px;
+  border-radius: 4px;
   background: rgba(2, 6, 23, 0.5);
   color: #cbd5e1;
   padding: 0.14rem 0.3rem;
@@ -545,7 +554,7 @@ textarea {
   min-height: 8rem;
   place-items: center;
   border: 1px dashed rgba(148, 163, 184, 0.26);
-  border-radius: 0.45rem;
+  border-radius: 4px;
   color: #94a3b8;
 }
 
@@ -618,7 +627,7 @@ input,
 select,
 textarea {
   border-color: rgba(226, 232, 240, 0.16);
-  border-radius: 0.72rem;
+  border-radius: 4px;
   background: rgba(2, 6, 23, 0.44);
   color: var(--text-main);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
@@ -666,7 +675,7 @@ textarea:focus {
 }
 
 .auth-card {
-  border-radius: 1.25rem;
+  border-radius: 4px;
   padding: 1.15rem;
 }
 
@@ -692,7 +701,7 @@ textarea:focus {
 
 .topbar {
   border: 1px solid var(--glass-border);
-  border-radius: 1rem;
+  border-radius: 4px;
   background: rgba(15, 23, 42, 0.42);
   padding: 0.42rem;
   box-shadow: 0 14px 46px rgba(2, 6, 23, 0.28);
@@ -701,7 +710,7 @@ textarea:focus {
 
 .search-box {
   border-color: rgba(226, 232, 240, 0.16);
-  border-radius: 0.82rem;
+  border-radius: 4px;
   background: rgba(2, 6, 23, 0.38);
   color: var(--text-muted);
 }
@@ -710,7 +719,7 @@ textarea:focus {
 .ghost-button,
 .danger-button,
 .icon-button {
-  border-radius: 0.72rem;
+  border-radius: 4px;
   transition:
     transform 150ms ease,
     border-color 150ms ease,
@@ -763,7 +772,7 @@ textarea:focus {
 
 .account-table {
   gap: 0.22rem;
-  border-radius: 1rem;
+  border-radius: 4px;
   /* 高度由 1fr 行约束，滚动只发生在表格内部 */
   max-height: 100%;
   padding: 0.34rem;
@@ -772,7 +781,7 @@ textarea:focus {
 .account-row {
   position: relative;
   border-color: rgba(226, 232, 240, 0.1);
-  border-radius: 0.82rem;
+  border-radius: 4px;
   background: rgba(2, 6, 23, 0.3);
   min-height: 2.28rem;
   padding: 0.18rem 0.36rem;
@@ -808,7 +817,7 @@ textarea:focus {
   width: 1.42rem;
   height: 1.42rem;
   border: 1px solid rgba(226, 232, 240, 0.1);
-  border-radius: 0.5rem;
+  border-radius: 4px;
   background: rgba(15, 23, 42, 0.4);
   color: #7dd3fc;
   cursor: grab;
@@ -845,7 +854,7 @@ textarea:focus {
   right: 0.7rem;
   left: 0.7rem;
   height: 2px;
-  border-radius: 999px;
+  border-radius: 4px;
   content: "";
   background: linear-gradient(90deg, transparent, var(--accent-b), var(--accent-c), transparent);
   box-shadow: 0 0 14px rgba(34, 211, 238, 0.55);
@@ -878,7 +887,7 @@ textarea:focus {
 
 .floating-panel {
   top: 3.15rem;
-  border-radius: 1rem;
+  border-radius: 4px;
   background:
     linear-gradient(135deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.03)),
     rgba(15, 23, 42, 0.82);
@@ -891,12 +900,12 @@ textarea:focus {
 }
 
 .dialog-panel {
-  border-radius: 1rem;
+  border-radius: 4px;
   padding: 0.82rem;
 }
 
 .settings-section {
-  border-radius: 0.9rem;
+  border-radius: 4px;
   background: rgba(2, 6, 23, 0.32);
 }
 
