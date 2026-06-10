@@ -1,5 +1,5 @@
-import { Eye, EyeOff, Send } from "lucide-solid";
-import { For, Show } from "solid-js";
+import { Eye, EyeOff, GripVertical, Send } from "lucide-solid";
+import { For, Show, createSignal } from "solid-js";
 import type { AccountEntry } from "../types";
 
 type AccountListProps = {
@@ -9,6 +9,7 @@ type AccountListProps = {
   visibleUsernames: Set<string>;
   allPasswordsVisible: boolean;
   allUsernamesVisible: boolean;
+  isReorderEnabled: boolean;
   onTogglePassword: (accountId: string) => void;
   onToggleUsername: (accountId: string) => void;
   onToggleAllPasswords: () => void;
@@ -18,20 +19,83 @@ type AccountListProps = {
   onShare: (account: AccountEntry) => void;
   onEdit: (account: AccountEntry) => void;
   onDelete: (account: AccountEntry) => void;
+  onReorder: (draggedId: string, targetId: string, placement: "before" | "after") => void;
 };
 
 export function AccountList(props: AccountListProps) {
+  const [draggedId, setDraggedId] = createSignal<string | null>(null);
+  const [dropTarget, setDropTarget] = createSignal<{
+    accountId: string;
+    placement: "before" | "after";
+  } | null>(null);
+  const [isDragArmed, setIsDragArmed] = createSignal(false);
+
   const isUsernameVisible = (account: AccountEntry) =>
     props.allUsernamesVisible || props.visibleUsernames.has(account.id);
   const isPasswordVisible = (account: AccountEntry) =>
     props.allPasswordsVisible || props.visiblePasswords.has(account.id);
+  const canReorder = () => props.isReorderEnabled && props.accounts.length > 1;
+
+  function handleDragStart(event: DragEvent, account: AccountEntry) {
+    if (!canReorder() || !isDragArmed()) {
+      event.preventDefault();
+      return;
+    }
+
+    setDraggedId(account.id);
+    event.dataTransfer?.setData("text/plain", account.id);
+    if (event.dataTransfer) {
+      event.dataTransfer.effectAllowed = "move";
+    }
+  }
+
+  function handleDragOver(event: DragEvent, account: AccountEntry) {
+    const currentDraggedId = draggedId();
+    if (!canReorder() || !currentDraggedId || currentDraggedId === account.id) {
+      return;
+    }
+
+    event.preventDefault();
+    const placement = getDropPlacement(event);
+    setDropTarget({ accountId: account.id, placement });
+    if (event.dataTransfer) {
+      event.dataTransfer.dropEffect = "move";
+    }
+  }
+
+  function handleDrop(event: DragEvent, account: AccountEntry) {
+    event.preventDefault();
+    const currentDraggedId = draggedId();
+    const placement = getDropPlacement(event);
+    setDraggedId(null);
+    setDropTarget(null);
+    setIsDragArmed(false);
+
+    if (!canReorder() || !currentDraggedId || currentDraggedId === account.id) {
+      return;
+    }
+
+    props.onReorder(currentDraggedId, account.id, placement);
+  }
+
+  function handleDragEnd() {
+    setDraggedId(null);
+    setDropTarget(null);
+    setIsDragArmed(false);
+  }
+
+  function getDropPlacement(event: DragEvent): "before" | "after" {
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    return event.clientY > rect.top + rect.height / 2 ? "after" : "before";
+  }
 
   return (
     <section class="account-list">
-      <Show when={props.hasServer} fallback={<div class="empty-state">先添加区服</div>}>
+      <Show when={props.hasServer} fallback={<div class="empty-state">先添加分组</div>}>
         <div class="account-table">
           <div class="account-row table-head">
-            <span>角色</span>
+            <span class="drag-column">排序</span>
+            <span>角色名</span>
             <span class="head-control">
               账号
               <button type="button" onClick={props.onToggleAllUsernames} title="显示/隐藏全部账号">
@@ -47,9 +111,45 @@ export function AccountList(props: AccountListProps) {
             <span>备注</span>
             <span>操作</span>
           </div>
-          <For each={props.accounts} fallback={<div class="empty-state">暂无账号，点击“账号”添加</div>}>
+          <For each={props.accounts} fallback={<div class="empty-state">暂无账号，点击「添加账号」</div>}>
             {(account) => (
-              <div class="account-row">
+              <div
+                classList={{
+                  "account-row": true,
+                  "is-dragging": draggedId() === account.id,
+                  "drop-before": dropTarget()?.accountId === account.id && dropTarget()?.placement === "before",
+                  "drop-after": dropTarget()?.accountId === account.id && dropTarget()?.placement === "after",
+                }}
+                draggable={canReorder()}
+                onDragStart={(event) => handleDragStart(event, account)}
+                onDragOver={(event) => handleDragOver(event, account)}
+                onDragLeave={() => {
+                  if (dropTarget()?.accountId === account.id) {
+                    setDropTarget(null);
+                  }
+                }}
+                onDrop={(event) => handleDrop(event, account)}
+                onDragEnd={handleDragEnd}
+              >
+                <span
+                  class="drag-handle"
+                  classList={{ "is-disabled": !canReorder() }}
+                  title={canReorder() ? "拖拽调整顺序" : "搜索时不可排序"}
+                  aria-label="拖拽调整账号顺序"
+                  role="button"
+                  tabIndex={canReorder() ? 0 : -1}
+                  onPointerDown={(event) => {
+                    if (canReorder()) {
+                      setIsDragArmed(true);
+                      event.currentTarget.setPointerCapture(event.pointerId);
+                    }
+                  }}
+                  onPointerUp={() => setIsDragArmed(false)}
+                  onPointerCancel={() => setIsDragArmed(false)}
+                  onLostPointerCapture={() => setIsDragArmed(false)}
+                >
+                  <GripVertical size={14} />
+                </span>
                 <div class="identity-cell">
                   <strong>{account.characterName}</strong>
                   <span class="profession-tag">{account.profession || "未配置"}</span>

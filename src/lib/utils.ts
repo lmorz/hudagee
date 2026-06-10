@@ -2,7 +2,15 @@ import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 import type { AccountEntry, AccountForm, ServerGroup, VaultData } from "../types";
 
-export const DEFAULT_PROFESSIONS = ["战士", "法师", "刺客", "射手", "辅助", "奶妈"];
+export const DEFAULT_PROFESSIONS = ["武侠", "法师", "羽芒", "羽灵", "妖兽", "妖精"];
+
+export type VaultMergeSummary = {
+  addedServers: number;
+  mergedServers: number;
+  addedAccounts: number;
+  skippedAccounts: number;
+  addedProfessions: number;
+};
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -32,6 +40,36 @@ export function normalizeVault(data: VaultData): VaultData {
     ...data,
     professions: data.professions?.length ? data.professions : DEFAULT_PROFESSIONS,
   };
+}
+
+function normalizeName(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function accountMergeKey(serverId: string, account: AccountEntry) {
+  return [
+    serverId,
+    normalizeName(account.characterName),
+    normalizeName(account.username),
+  ].join("\u0000");
+}
+
+function createUniqueServerName(name: string, usedNames: Set<string>) {
+  if (!usedNames.has(name)) {
+    return name;
+  }
+
+  let suffix = 2;
+  let nextName = `${name} (${suffix})`;
+  while (usedNames.has(nextName)) {
+    suffix += 1;
+    nextName = `${name} (${suffix})`;
+  }
+  return nextName;
+}
+
+function getPrimaryServer(servers: ServerGroup[]) {
+  return [...servers].sort((left, right) => left.sortOrder - right.sortOrder)[0];
 }
 
 export function createServer(name: string, sortOrder: number): ServerGroup {
@@ -82,4 +120,144 @@ export function formatDateTime(value: string) {
 
 export function getServerAccountCount(accounts: AccountEntry[], serverId: string) {
   return accounts.filter((account) => account.serverId === serverId).length;
+}
+
+export function mergeVaultData(current: VaultData, imported: VaultData): { vault: VaultData; summary: VaultMergeSummary } {
+  const timestamp = nowIso();
+  const serversByName = new Map<string, ServerGroup[]>();
+  for (const server of current.servers) {
+    const serverName = normalizeName(server.name);
+    serversByName.set(serverName, [...(serversByName.get(serverName) ?? []), server]);
+  }
+  const serverById = new Map(current.servers.map((server) => [server.id, server]));
+  const usedServerNames = new Set(current.servers.map((server) => normalizeName(server.name)));
+  const importedServerIdToMergedServer = new Map<string, ServerGroup>();
+  const nextServers = [...current.servers];
+  let addedServers = 0;
+  let mergedServers = 0;
+
+  for (const importedServer of imported.servers) {
+    // 优先按 ID 匹配：重新导入本机导出的备份时，即使分组已改名也视为同一分组
+    const sameIdServer = serverById.get(importedServer.id);
+    if (sameIdServer) {
+      importedServerIdToMergedServer.set(importedServer.id, sameIdServer);
+      mergedServers += 1;
+      continue;
+    }
+
+    const serverName = normalizeName(importedServer.name) || "未命名分组";
+    const matchingServers = serversByName.get(serverName) ?? [];
+
+    const existingServer = getPrimaryServer(matchingServers);
+    if (existingServer) {
+      importedServerIdToMergedServer.set(importedServer.id, existingServer);
+      mergedServers += 1;
+      continue;
+    }
+
+    const nextServerName = createUniqueServerName(serverName, usedServerNames);
+    const nextServer = {
+      ...importedServer,
+      id: createId("srv"),
+      name: nextServerName,
+      sortOrder: nextServers.length,
+      updatedAt: timestamp,
+    };
+    nextServers.push(nextServer);
+    serversByName.set(nextServerName, [...(serversByName.get(nextServerName) ?? []), nextServer]);
+    usedServerNames.add(nextServerName);
+    importedServerIdToMergedServer.set(importedServer.id, nextServer);
+    addedServers += 1;
+  }
+
+  const serverIdsByName = new Map<string, string[]>();
+  for (const server of nextServers) {
+    const serverName = normalizeName(server.name);
+    serverIdsByName.set(serverName, [...(serverIdsByName.get(serverName) ?? []), server.id]);
+  }
+  const accountKeys = new Set(
+    current.accounts.map((account) => accountMergeKey(account.serverId, account)),
+  );
+  const nextAccounts = [...current.accounts];
+  let addedAccounts = 0;
+  let skippedAccounts = 0;
+
+  for (const importedAccount of imported.accounts) {
+    const mergedServer = importedServerIdToMergedServer.get(importedAccount.serverId);
+    if (!mergedServer) {
+      skippedAccounts += 1;
+      continue;
+    }
+
+    const characterName = normalizeName(importedAccount.characterName);
+    const username = normalizeName(importedAccount.username);
+    if (!characterName || !username) {
+      skippedAccounts += 1;
+      continue;
+    }
+
+    const nextAccount = {
+      ...importedAccount,
+      id: createId("acc"),
+      serverId: mergedServer.id,
+      characterName,
+      username,
+      profession: normalizeName(importedAccount.profession),
+      note: normalizeName(importedAccount.note),
+      updatedAt: timestamp,
+    };
+    // 与所有同名分组（含历史遗留的重名分组）下的账号判重，避免逻辑重复
+    const siblingServerIds = serverIdsByName.get(normalizeName(mergedServer.name)) ?? [mergedServer.id];
+    const isDuplicate = siblingServerIds.some((serverId) =>
+      accountKeys.has(accountMergeKey(serverId, nextAccount)),
+    );
+    if (isDuplicate) {
+      skippedAccounts += 1;
+      continue;
+    }
+
+    accountKeys.add(accountMergeKey(mergedServer.id, nextAccount));
+    nextAccounts.push(nextAccount);
+    addedAccounts += 1;
+  }
+
+  const professionSet = new Set(current.professions);
+  const nextProfessions = [...current.professions];
+  let addedProfessions = 0;
+  for (const profession of imported.professions) {
+    const normalizedProfession = normalizeName(profession);
+    if (!normalizedProfession || professionSet.has(normalizedProfession)) {
+      continue;
+    }
+
+    professionSet.add(normalizedProfession);
+    nextProfessions.push(normalizedProfession);
+    addedProfessions += 1;
+  }
+
+  return {
+    vault: {
+      ...current,
+      servers: nextServers,
+      accounts: nextAccounts,
+      professions: nextProfessions,
+    },
+    summary: {
+      addedServers,
+      mergedServers,
+      addedAccounts,
+      skippedAccounts,
+      addedProfessions,
+    },
+  };
+}
+
+export function formatVaultMergeSummary(summary: VaultMergeSummary) {
+  return [
+    `新增 ${summary.addedServers} 个分组`,
+    `合并 ${summary.mergedServers} 个同名分组`,
+    `导入 ${summary.addedAccounts} 条账号`,
+    `跳过 ${summary.skippedAccounts} 条重复或无效账号`,
+    `新增 ${summary.addedProfessions} 个职业`,
+  ].join("，");
 }

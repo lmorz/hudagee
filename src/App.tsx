@@ -1,25 +1,29 @@
+import { Plus, Search } from "lucide-solid";
 import { createEffect, createMemo, createSignal, Match, Show, Switch } from "solid-js";
 import { Toaster, toast } from "solid-sonner";
 import { AccountFormPanel } from "./components/AccountFormPanel";
 import { AccountList } from "./components/AccountList";
 import { AuthView } from "./components/AuthView";
 import { ConfirmDialog } from "./components/ConfirmDialog";
+import { ImportModeDialog } from "./components/ImportModeDialog";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { TopBar } from "./components/TopBar";
-import type { AccountEntry, AccountForm, ServerGroup, VaultData } from "./types";
+import type { AccountEntry, AccountForm, ServerGroup, VaultData, VaultEnvelope } from "./types";
 import { readBackupFile, saveBackupFile } from "./lib/backup";
 import { buildShareText, copyText } from "./lib/clipboard";
 import {
   createAccount,
   createEmptyVault,
   createServer,
+  formatVaultMergeSummary,
   getServerAccountCount,
+  mergeVaultData,
   updateAccount,
 } from "./lib/utils";
 import {
   exportVaultBackup,
   hasVault,
-  importVaultBackup,
+  parseVaultBackup,
   saveVault,
   unlockVault,
 } from "./lib/vault";
@@ -29,6 +33,10 @@ type PendingDelete =
   | { type: "server"; server: ServerGroup }
   | { type: "account"; account: AccountEntry }
   | null;
+type PendingImport = {
+  envelope: VaultEnvelope;
+  data: VaultData;
+} | null;
 
 const emptyForm: AccountForm = {
   serverId: "",
@@ -60,6 +68,10 @@ function App() {
   const [showPasswordColumn, setShowPasswordColumn] = createSignal(false);
   const [showUsernameColumn, setShowUsernameColumn] = createSignal(false);
   const [pendingDelete, setPendingDelete] = createSignal<PendingDelete>(null);
+  const [pendingImport, setPendingImport] = createSignal<PendingImport>(null);
+  const [isImporting, setIsImporting] = createSignal(false);
+  const [isSavingVault, setIsSavingVault] = createSignal(false);
+  const [isReordering, setIsReordering] = createSignal(false);
   const [error, setError] = createSignal("");
 
   createEffect(() => {
@@ -99,7 +111,7 @@ function App() {
     if (!target) {
       return "";
     }
-    return target.type === "server" ? "删除区服" : "删除账号";
+    return target.type === "server" ? "删除分组" : "删除账号";
   });
 
   const deleteDialogDescription = createMemo(() => {
@@ -108,7 +120,7 @@ function App() {
       return "";
     }
     if (target.type === "server") {
-      return `确定删除区服「${target.server.name}」？该区服下所有账号也会被删除。`;
+      return `确定删除分组「${target.server.name}」？该分组下所有账号也会被删除。`;
     }
     return `确定删除角色「${target.account.characterName}」的账号记录？`;
   });
@@ -127,9 +139,28 @@ function App() {
     }
   });
 
-  async function persist(nextVault: VaultData) {
-    setVault(nextVault);
-    await saveVault(nextVault, masterPassword());
+  async function persist(nextVault: VaultData, showError = true) {
+    setIsSavingVault(true);
+    try {
+      await saveVault(nextVault, masterPassword());
+      setVault(nextVault);
+    } catch (saveError) {
+      if (showError) {
+        toast.error(saveError instanceof Error ? saveError.message : "保存失败");
+      }
+      throw saveError;
+    } finally {
+      setIsSavingVault(false);
+    }
+  }
+
+  function isWriteBlocked() {
+    if (isSavingVault() || isReordering() || isImporting()) {
+      toast.info("正在保存，请稍候");
+      return true;
+    }
+
+    return false;
   }
 
   async function handleAuth(event: Event) {
@@ -159,9 +190,17 @@ function App() {
 
   async function addServer(event: Event) {
     event.preventDefault();
+    if (isWriteBlocked()) {
+      return;
+    }
+
     const name = serverName().trim();
     if (!name) {
-      toast.error("请输入区服名称");
+      toast.error("请输入分组名称");
+      return;
+    }
+    if (vault().servers.some((server) => server.name.trim() === name)) {
+      toast.error("同名分组已存在");
       return;
     }
 
@@ -174,10 +213,14 @@ function App() {
     setForm({ ...form(), serverId: nextServer.id });
     setServerName("");
     setError("");
-    toast.success("区服已添加");
+    toast.success("分组已添加");
   }
 
   async function confirmDeleteServer(server: ServerGroup) {
+    if (isWriteBlocked()) {
+      return;
+    }
+
     const nextServers = vault().servers.filter((item) => item.id !== server.id);
     await persist({
       ...vault(),
@@ -186,14 +229,18 @@ function App() {
     });
     setSelectedServerId(nextServers[0]?.id ?? null);
     setPendingDelete(null);
-    toast.success("区服已删除");
+    toast.success("分组已删除");
   }
 
   async function submitAccount(event: Event) {
     event.preventDefault();
+    if (isWriteBlocked()) {
+      return;
+    }
+
     const payload = form();
     if (!payload.serverId || !payload.characterName || !payload.username || !payload.password) {
-      toast.error("区服、角色名、账号和密码为必填");
+      toast.error("分组、角色名、账号和密码为必填");
       return;
     }
 
@@ -238,12 +285,67 @@ function App() {
   }
 
   async function confirmDeleteAccount(account: AccountEntry) {
+    if (isWriteBlocked()) {
+      return;
+    }
+
     await persist({
       ...vault(),
       accounts: vault().accounts.filter((item) => item.id !== account.id),
     });
     setPendingDelete(null);
     toast.success("账号已删除");
+  }
+
+  async function reorderAccount(draggedId: string, targetId: string, placement: "before" | "after") {
+    if (isSavingVault() || isReordering() || query().trim() || draggedId === targetId) {
+      return;
+    }
+
+    const accounts = vault().accounts;
+    const draggedAccount = accounts.find((account) => account.id === draggedId);
+    const targetAccount = accounts.find((account) => account.id === targetId);
+    if (!draggedAccount || !targetAccount || draggedAccount.serverId !== targetAccount.serverId) {
+      return;
+    }
+
+    const serverAccounts = accounts.filter((account) => account.serverId === draggedAccount.serverId);
+    const withoutDragged = serverAccounts.filter((account) => account.id !== draggedId);
+    const targetIndex = withoutDragged.findIndex((account) => account.id === targetId);
+    if (targetIndex === -1) {
+      return;
+    }
+
+    const insertIndex = placement === "after" ? targetIndex + 1 : targetIndex;
+    const nextServerAccounts = [
+      ...withoutDragged.slice(0, insertIndex),
+      draggedAccount,
+      ...withoutDragged.slice(insertIndex),
+    ];
+    if (nextServerAccounts.every((account, index) => account.id === serverAccounts[index]?.id)) {
+      return;
+    }
+
+    let serverAccountIndex = 0;
+    const nextAccounts = accounts.map((account) => {
+      if (account.serverId !== draggedAccount.serverId) {
+        return account;
+      }
+
+      const nextAccount = nextServerAccounts[serverAccountIndex];
+      serverAccountIndex += 1;
+      return nextAccount;
+    });
+
+    try {
+      setIsReordering(true);
+      await persist({ ...vault(), accounts: nextAccounts }, false);
+      toast.success("账号顺序已更新");
+    } catch (reorderError) {
+      toast.error(reorderError instanceof Error ? reorderError.message : "账号排序保存失败");
+    } finally {
+      setIsReordering(false);
+    }
   }
 
   function confirmPendingDelete() {
@@ -310,6 +412,10 @@ function App() {
   }
 
   async function exportBackup() {
+    if (isWriteBlocked()) {
+      return;
+    }
+
     try {
       const backup = await exportVaultBackup(vault(), masterPassword());
       toast.success(await saveBackupFile(backup));
@@ -319,22 +425,98 @@ function App() {
   }
 
   async function importBackup() {
+    if (pendingImport() || isImporting()) {
+      toast.info("请先完成当前导入操作");
+      return;
+    }
+
     try {
+      setIsImporting(true);
       const raw = await readBackupFile();
       if (!raw) {
         return;
       }
-      const imported = await importVaultBackup(raw, masterPassword());
-      setVault(imported);
-      setSelectedServerId(imported.servers[0]?.id ?? null);
-      toast.success("加密备份已导入");
+      const { envelope, data } = await parseVaultBackup(raw, masterPassword());
+      setPendingImport({ envelope, data });
     } catch (importError) {
       toast.error(importError instanceof Error ? importError.message : "导入失败");
+    } finally {
+      setIsImporting(false);
+    }
+  }
+
+  async function mergePendingImport() {
+    const pending = pendingImport();
+    if (!pending) {
+      return;
+    }
+    if (isImporting()) {
+      return;
+    }
+    if (isWriteBlocked()) {
+      return;
+    }
+
+    try {
+      setIsImporting(true);
+      const { vault: nextVault, summary } = mergeVaultData(vault(), pending.data);
+      await persist(nextVault, false);
+      const selectedId = selectedServerId();
+      const nextSelectedId = nextVault.servers.some((server) => server.id === selectedId)
+        ? selectedId
+        : nextVault.servers[0]?.id ?? null;
+      setSelectedServerId(nextSelectedId);
+      setPendingImport(null);
+      toast.success("备份已合并导入", { description: formatVaultMergeSummary(summary) });
+    } catch (mergeError) {
+      toast.error(mergeError instanceof Error ? mergeError.message : "合并导入失败");
+    } finally {
+      setIsImporting(false);
+    }
+  }
+
+  async function replaceWithPendingImport() {
+    const pending = pendingImport();
+    if (!pending) {
+      return;
+    }
+    if (isImporting()) {
+      return;
+    }
+    if (isWriteBlocked()) {
+      return;
+    }
+
+    try {
+      setIsImporting(true);
+      setIsSavingVault(true);
+      await saveVault(pending.data, masterPassword());
+      const selectedId = selectedServerId();
+      const nextSelectedId = pending.data.servers.some((server) => server.id === selectedId)
+        ? selectedId
+        : pending.data.servers[0]?.id ?? null;
+      setVault(pending.data);
+      setSelectedServerId(nextSelectedId);
+      setEditingId(null);
+      setForm({ ...emptyForm, serverId: nextSelectedId ?? "" });
+      setIsFormOpen(false);
+      setPendingDelete(null);
+      setPendingImport(null);
+      toast.success("已覆盖恢复备份");
+    } catch (replaceError) {
+      toast.error(replaceError instanceof Error ? replaceError.message : "覆盖恢复失败");
+    } finally {
+      setIsSavingVault(false);
+      setIsImporting(false);
     }
   }
 
   async function addProfession(event: Event) {
     event.preventDefault();
+    if (isWriteBlocked()) {
+      return;
+    }
+
     const profession = newProfession().trim();
     if (!profession) {
       return;
@@ -350,6 +532,10 @@ function App() {
   }
 
   async function deleteProfession(profession: string) {
+    if (isWriteBlocked()) {
+      return;
+    }
+
     await persist({
       ...vault(),
       professions: vault().professions.filter((item) => item !== profession),
@@ -358,14 +544,22 @@ function App() {
   }
 
   async function renameServer(serverId: string, name: string) {
+    if (isWriteBlocked()) {
+      return;
+    }
+
     const nextName = name.trim();
     if (!nextName) {
-      toast.error("区服名称不能为空");
+      toast.error("分组名称不能为空");
       return;
     }
 
     const currentServer = vault().servers.find((server) => server.id === serverId);
     if (!currentServer || currentServer.name === nextName) {
+      return;
+    }
+    if (vault().servers.some((server) => server.id !== serverId && server.name.trim() === nextName)) {
+      toast.error("同名分组已存在");
       return;
     }
 
@@ -375,11 +569,15 @@ function App() {
         server.id === serverId ? { ...server, name: nextName, updatedAt: new Date().toISOString() } : server,
       ),
     });
-    toast.success("区服已更新");
+    toast.success("分组已更新");
   }
 
   async function resetMasterPassword(event: Event) {
     event.preventDefault();
+    if (isWriteBlocked()) {
+      return;
+    }
+
     const currentPassword = currentMasterPassword();
     const nextPassword = nextMasterPassword();
 
@@ -396,15 +594,30 @@ function App() {
       return;
     }
 
-    await saveVault(vault(), nextPassword);
-    setMasterPassword(nextPassword);
-    setCurrentMasterPassword("");
-    setNextMasterPassword("");
-    setConfirmNextMasterPassword("");
-    toast.success("主密码已重置");
+    try {
+      setIsSavingVault(true);
+      await saveVault(vault(), nextPassword);
+      setMasterPassword(nextPassword);
+      setCurrentMasterPassword("");
+      setNextMasterPassword("");
+      setConfirmNextMasterPassword("");
+      toast.success("主密码已重置");
+    } catch (resetError) {
+      toast.error(resetError instanceof Error ? resetError.message : "主密码重置失败");
+    } finally {
+      setIsSavingVault(false);
+    }
   }
 
   function lockApp() {
+    if (isWriteBlocked()) {
+      return;
+    }
+    if (pendingImport()) {
+      toast.info("请先完成或取消当前导入操作");
+      return;
+    }
+
     setVault(createEmptyVault());
     setMasterPassword("");
     setConfirmPassword("");
@@ -412,13 +625,15 @@ function App() {
     setNextMasterPassword("");
     setConfirmNextMasterPassword("");
     setSelectedServerId(null);
+    setPendingImport(null);
+    setIsImporting(false);
     setAuthMode("unlock");
     toast.info("应用已锁定");
   }
 
   return (
     <>
-      <Toaster position="top-center" richColors duration={2600} visibleToasts={2} gap={6} offset={8} />
+      <Toaster position="bottom-right" richColors duration={2600} visibleToasts={2} gap={6} offset={8} />
       <Switch>
         <Match when={authMode() === "loading"}>
           <AuthView
@@ -450,7 +665,6 @@ function App() {
             <TopBar
               servers={sortedServers()}
               selectedServerId={activeServer()?.id ?? ""}
-              query={query()}
               serverName={serverName()}
               showSettings={showSettings()}
               onServerChange={(serverId) => {
@@ -465,8 +679,6 @@ function App() {
                   setPendingDelete({ type: "server", server: active });
                 }
               }}
-              onQueryInput={setQuery}
-              onAddAccount={startCreateAccount}
               onToggleSettings={() => setShowSettings(!showSettings())}
               onImport={importBackup}
               onExport={exportBackup}
@@ -474,8 +686,22 @@ function App() {
             />
 
             <div class="summary-line">
-              <span>{filteredAccounts().length} 条账号</span>
-              <span>共 {getServerAccountCount(vault().accounts, activeServer()?.id ?? "")} 条</span>
+              <div class="search-box">
+                <Search size={13} />
+                <input
+                  value={query()}
+                  onInput={(event) => setQuery(event.currentTarget.value)}
+                  placeholder="搜索"
+                />
+              </div>
+              <div class="summary-stats">
+                <span>{filteredAccounts().length} 条账号</span>
+                <span>共 {getServerAccountCount(vault().accounts, activeServer()?.id ?? "")} 条</span>
+              </div>
+              <button class="primary-button compact" type="button" onClick={startCreateAccount}>
+                <Plus size={13} />
+                添加账号
+              </button>
             </div>
 
             <AccountList
@@ -485,6 +711,7 @@ function App() {
               visibleUsernames={visibleUsernames()}
               allPasswordsVisible={showPasswordColumn()}
               allUsernamesVisible={showUsernameColumn()}
+              isReorderEnabled={!query().trim() && !isSavingVault() && !isReordering() && !isImporting()}
               onTogglePassword={togglePassword}
               onToggleUsername={toggleUsername}
               onToggleAllPasswords={toggleAllPasswords}
@@ -494,6 +721,9 @@ function App() {
               onShare={(account) => copyValue(buildShareText(account), "分享信息已复制")}
               onEdit={startEdit}
               onDelete={(account) => setPendingDelete({ type: "account", account })}
+              onReorder={(draggedId, targetId, placement) => {
+                void reorderAccount(draggedId, targetId, placement);
+              }}
             />
 
             <Show when={isFormOpen()}>
@@ -536,6 +766,23 @@ function App() {
                 description={deleteDialogDescription()}
                 onConfirm={confirmPendingDelete}
                 onCancel={() => setPendingDelete(null)}
+              />
+            </Show>
+
+            <Show when={pendingImport()}>
+              <ImportModeDialog
+                isBusy={isImporting()}
+                onMerge={() => {
+                  void mergePendingImport();
+                }}
+                onReplace={() => {
+                  void replaceWithPendingImport();
+                }}
+                onCancel={() => {
+                  if (!isImporting()) {
+                    setPendingImport(null);
+                  }
+                }}
               />
             </Show>
           </main>

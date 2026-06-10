@@ -136,13 +136,24 @@ export async function saveVault(data: VaultData, masterPassword: string) {
   await writeVaultEnvelope(envelope);
 }
 
+export async function restoreVaultEnvelope(envelope: VaultEnvelope) {
+  await writeVaultEnvelope(envelope);
+}
+
 export async function exportVaultBackup(data: VaultData, masterPassword: string) {
   return JSON.stringify(await encryptVault(data, masterPassword), null, 2);
 }
 
-export async function importVaultBackup(raw: string, masterPassword: string) {
+export async function parseVaultBackup(raw: string, masterPassword: string) {
   const envelope = JSON.parse(raw) as VaultEnvelope;
-  const data = await decryptVault(envelope, masterPassword);
+  return {
+    envelope,
+    data: await decryptVault(envelope, masterPassword),
+  };
+}
+
+export async function importVaultBackup(raw: string, masterPassword: string) {
+  const { envelope, data } = await parseVaultBackup(raw, masterPassword);
   await writeVaultEnvelope(envelope);
   return data;
 }

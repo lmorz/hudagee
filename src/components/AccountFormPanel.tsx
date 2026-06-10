@@ -28,13 +28,13 @@ export function AccountFormPanel(props: AccountFormPanelProps) {
 
         <div class="form-grid">
           <label>
-            区服
+            分组
             <select
               value={props.form.serverId}
               onChange={(event) => props.onInput({ ...props.form, serverId: event.currentTarget.value })}
             >
               <option value="" disabled>
-                选择区服
+                选择分组
               </option>
               <For each={props.servers}>
                 {(server) => <option value={server.id}>{server.name}</option>}

@@ -44,12 +44,12 @@ export function SettingsPanel(props: SettingsPanelProps) {
         <div class="settings-sections">
           <section class="settings-section">
             <div class="settings-section-head">
-              <strong>区服配置</strong>
-              <span>编辑已有区服名称</span>
+              <strong>分组配置</strong>
+              <span>编辑已有分组名称</span>
             </div>
 
             <div class="settings-list">
-              <For each={props.servers} fallback={<span class="muted">暂无区服</span>}>
+              <For each={props.servers} fallback={<span class="muted">暂无分组</span>}>
                 {(server) => (
                   <form
                     class="settings-list-row"
@@ -66,7 +66,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
                           [server.id]: event.currentTarget.value,
                         })
                       }
-                      placeholder="区服名称"
+                      placeholder="分组名称"
                     />
                     <button class="ghost-button compact" type="submit">
                       <Save size={12} />
