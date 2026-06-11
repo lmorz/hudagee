@@ -929,7 +929,8 @@ function App() {
                   onClick={() => {
                     void startQuickAddAccount();
                   }}
-                  title="从剪贴板读取账号信息快速添加（点击已存在账号右侧分享按钮，再点这个按钮试试）"
+                  title="从剪贴板读取账号信息快速添加
+（点击已存在账号右侧分享按钮，再点这个按钮试试）"
                 >
                   <ClipboardPaste size={13} />
                   快捷添加

@@ -19,11 +19,16 @@
         "minHeight": 500,
         "visible": false,
         "backgroundColor": "#080b12",
-        "dragDropEnabled": false
+        "dragDropEnabled": false,
+        "transparent": true
       }
     ],
     "security": {
-      "csp": null
+      "csp": null,
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["$APPDATA/**"]
+      }
     }
   },
   "bundle": {

@@ -1,21 +1,38 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="aurora">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>HuDaGee</title>
+    <script>
+      (function () {
+        var presets = { aurora: 1, midnight: 1, ocean: 1, ember: 1, slate: 1 };
+        try {
+          var raw = localStorage.getItem("hudagee.appearance");
+          if (!raw) {
+            return;
+          }
+          var prefs = JSON.parse(raw);
+          if (prefs && presets[prefs.preset]) {
+            document.documentElement.setAttribute("data-theme", prefs.preset);
+          }
+        } catch (_error) {
+          // ignore invalid stored appearance
+        }
+      })();
+    </script>
     <style>
       html {
         color-scheme: dark;
-        background: #080b12;
+        background: #050816;
       }
 
       body {
         margin: 0;
         min-width: 700px;
         min-height: 100vh;
-        background: #080b12;
+        background: #050816;
         color: #e5e7eb;
         font-family:
           "Segoe UI Variable",
