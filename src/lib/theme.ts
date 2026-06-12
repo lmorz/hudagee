@@ -15,6 +15,7 @@ export type AppearancePreferences = {
   tintColor: string;
   tintOpacity: number;
   backgroundImagePath?: string;
+  backgroundImageVersion?: number;
 };
 
 export type ThemePresetMeta = {
@@ -239,6 +240,10 @@ function normalizeAppearance(raw: Partial<AppearancePreferences> | null | undefi
     typeof raw?.backgroundImagePath === "string" && raw.backgroundImagePath.length > 0
       ? raw.backgroundImagePath
       : undefined;
+  const backgroundImageVersion =
+    typeof raw?.backgroundImageVersion === "number" && Number.isFinite(raw.backgroundImageVersion)
+      ? raw.backgroundImageVersion
+      : undefined;
 
   return {
     preset,
@@ -254,6 +259,7 @@ function normalizeAppearance(raw: Partial<AppearancePreferences> | null | undefi
     tintColor: normalizeHexColor(raw?.tintColor, DEFAULT_APPEARANCE.tintColor),
     tintOpacity: clamp(toNumber(raw?.tintOpacity, DEFAULT_APPEARANCE.tintOpacity), TINT_OPACITY_MIN, TINT_OPACITY_MAX),
     backgroundImagePath,
+    backgroundImageVersion,
   };
 }
 
@@ -294,10 +300,14 @@ export async function applyAppearance(prefs: AppearancePreferences) {
   const preset = THEME_PRESETS[normalized.preset];
   const accent = normalized.accentColor ? deriveAccentPalette(normalized.accentColor) : preset.tokens;
   const root = document.documentElement;
-  let backgroundImageUrl = await resolveBackgroundImageUrl(normalized.backgroundImagePath);
+  let backgroundImageUrl = await resolveBackgroundImageUrl(
+    normalized.backgroundImagePath,
+    normalized.backgroundImageVersion,
+  );
   if (normalized.backgroundImagePath && !backgroundImageUrl) {
     normalized = { ...normalized };
     delete normalized.backgroundImagePath;
+    delete normalized.backgroundImageVersion;
     writeAppearance(normalized);
   }
 

@@ -22,30 +22,48 @@ export function AppearanceSettings() {
   const [prefs, setPrefs] = createSignal<AppearancePreferences>(readAppearance());
   const [bgPreviewUrl, setBgPreviewUrl] = createSignal<string | null>(null);
   let fileInput: HTMLInputElement | undefined;
-  let applyGeneration = 0;
+  let pendingCommit: AppearancePreferences | null = null;
+  let applyingPrefs: AppearancePreferences | null = null;
+  let commitInflight: Promise<void> | null = null;
+
+  function latestPrefs() {
+    return pendingCommit ?? applyingPrefs ?? prefs();
+  }
 
   onMount(() => {
-    void resolveBackgroundImageUrl(prefs().backgroundImagePath).then((url) => {
+    void resolveBackgroundImageUrl(prefs().backgroundImagePath, prefs().backgroundImageVersion).then((url) => {
       setBgPreviewUrl(url);
     });
   });
 
   async function commit(next: AppearancePreferences) {
-    const generation = ++applyGeneration;
-    const applied = await applyAppearance(next);
-    if (generation !== applyGeneration) {
-      return;
+    pendingCommit = next;
+    if (commitInflight) {
+      return commitInflight;
     }
-    setPrefs(applied);
-    writeAppearance(applied);
+
+    commitInflight = (async () => {
+      while (pendingCommit) {
+        const toApply = pendingCommit;
+        pendingCommit = null;
+        applyingPrefs = toApply;
+        const applied = await applyAppearance(toApply);
+        applyingPrefs = null;
+        setPrefs(applied);
+        writeAppearance(applied);
+      }
+      commitInflight = null;
+    })();
+
+    return commitInflight;
   }
 
   async function update(patch: Partial<AppearancePreferences>) {
-    await commit({ ...prefs(), ...patch });
+    await commit({ ...latestPrefs(), ...patch });
   }
 
   async function selectPreset(preset: ThemePresetId) {
-    const next = { ...prefs(), preset };
+    const next = { ...latestPrefs(), preset };
     delete next.accentColor;
     await commit(next);
   }
@@ -55,24 +73,24 @@ export function AppearanceSettings() {
   }
 
   async function clearAccentColor() {
-    const next = { ...prefs() };
+    const next = { ...latestPrefs() };
     delete next.accentColor;
     await commit(next);
   }
 
   async function resetAppearance() {
-    await removeStoredBackgroundImage(prefs().backgroundImagePath);
+    await removeStoredBackgroundImage(latestPrefs().backgroundImagePath);
     const next = { ...DEFAULT_APPEARANCE };
     setPrefs(next);
     setBgPreviewUrl(null);
-    await applyAppearance(next);
-    writeAppearance(next);
+    await commit(next);
   }
 
   async function clearBackgroundImage() {
-    await removeStoredBackgroundImage(prefs().backgroundImagePath);
-    const next = { ...prefs() };
+    await removeStoredBackgroundImage(latestPrefs().backgroundImagePath);
+    const next = { ...latestPrefs() };
     delete next.backgroundImagePath;
+    delete next.backgroundImageVersion;
     setBgPreviewUrl(null);
     await commit(next);
   }
@@ -91,20 +109,22 @@ export function AppearanceSettings() {
     }
 
     try {
-      const previousPath = prefs().backgroundImagePath;
+      const previousPath = latestPrefs().backgroundImagePath;
       const result = await importBackgroundImage(file);
       if (result.warning) {
         toast.warning(result.warning);
       }
       setBgPreviewUrl(result.previewUrl);
-      const next = { ...prefs() };
+      const next = { ...latestPrefs() };
       if (result.relativePath) {
         next.backgroundImagePath = result.relativePath;
+        next.backgroundImageVersion = result.cacheVersion;
         await removeStoredBackgroundImage(
           previousPath && previousPath !== result.relativePath ? previousPath : undefined,
         );
       } else {
         delete next.backgroundImagePath;
+        delete next.backgroundImageVersion;
         toast.info("浏览器预览模式不会保存背景图，请使用桌面版持久化。");
       }
       await commit(next);

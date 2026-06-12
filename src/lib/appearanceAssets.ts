@@ -11,8 +11,16 @@ const JPEG_QUALITY = 0.85;
 export type BackgroundImageImportResult = {
   relativePath?: string;
   previewUrl: string;
+  cacheVersion: number;
   warning?: string;
 };
+
+function withCacheBuster(url: string, cacheVersion?: number) {
+  if (!cacheVersion) {
+    return url;
+  }
+  return `${url}?v=${cacheVersion}`;
+}
 
 function extensionFromMime(mime: string) {
   if (mime === "image/png") {
@@ -77,9 +85,12 @@ export async function importBackgroundImage(file: File): Promise<BackgroundImage
   const { blob, extension } = await resizeImageFile(file);
   const relativePath = `appearance/wallpaper.${extension}`;
 
+  const cacheVersion = Date.now();
+
   if (!isTauriRuntime()) {
     return {
       previewUrl: URL.createObjectURL(blob),
+      cacheVersion,
       warning,
     };
   }
@@ -98,14 +109,16 @@ export async function importBackgroundImage(file: File): Promise<BackgroundImage
 
   await writeFile(outputPath, new Uint8Array(await blob.arrayBuffer()));
   const absolutePath = outputPath;
+  const assetUrl = convertFileSrc(absolutePath);
   return {
     relativePath,
-    previewUrl: convertFileSrc(absolutePath),
+    previewUrl: withCacheBuster(assetUrl, cacheVersion),
+    cacheVersion,
     warning,
   };
 }
 
-export async function resolveBackgroundImageUrl(relativePath: string | undefined) {
+export async function resolveBackgroundImageUrl(relativePath: string | undefined, cacheVersion?: number) {
   if (!relativePath) {
     return null;
   }
@@ -119,7 +132,7 @@ export async function resolveBackgroundImageUrl(relativePath: string | undefined
     return null;
   }
 
-  return convertFileSrc(absolutePath);
+  return withCacheBuster(convertFileSrc(absolutePath), cacheVersion);
 }
 
 export async function removeStoredBackgroundImage(relativePath: string | undefined) {
