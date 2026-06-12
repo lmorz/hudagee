@@ -1,5 +1,5 @@
 import { ClipboardPaste, Plus, Search } from "lucide-solid";
-import { createEffect, createMemo, createSignal, Match, Show, Switch } from "solid-js";
+import { createEffect, createMemo, createSignal, Match, onMount, Show, Switch } from "solid-js";
 import { Toaster, toast } from "solid-sonner";
 import { AccountFormPanel } from "./components/AccountFormPanel";
 import { AccountList } from "./components/AccountList";
@@ -12,7 +12,7 @@ import type { AccountEntry, AccountForm, ServerGroup, VaultData } from "./types"
 import { readBackupFile, saveBackupFile } from "./lib/backup";
 import { buildShareText, copyText, parseShareText, readClipboardText } from "./lib/clipboard";
 import { readLastSelectedServerId, resolveSelectedServerId, writeLastSelectedServerId } from "./lib/preferences";
-import { revealMainWindow } from "./lib/tauri";
+import { revealMainWindow, isTauriRuntime } from "./lib/tauri";
 import {
   createAccount,
   createEmptyVault,
@@ -23,6 +23,7 @@ import {
   reorderServers,
   updateAccount,
 } from "./lib/utils";
+import { initWindowToggleShortcut } from "./lib/windowToggleShortcut";
 import {
   BACKUP_INVALID_FORMAT_MESSAGE,
   BACKUP_WRONG_PASSWORD_MESSAGE,
@@ -110,6 +111,16 @@ function App() {
         setAuthMode("corrupted");
       }
     })();
+  });
+
+  onMount(() => {
+    if (!isTauriRuntime()) {
+      return;
+    }
+
+    void initWindowToggleShortcut().catch((initError) => {
+      toast.warning(initError instanceof Error ? initError.message : "全局快捷键注册失败，可在配置中更换组合键");
+    });
   });
 
   createEffect(() => {

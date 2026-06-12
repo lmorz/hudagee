@@ -2,6 +2,27 @@
 
 本项目的 notable 变更记录。版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.1.1] - 2026-06-12
+
+### 新增
+
+- **全局快捷键**：默认 `Alt + \`` 可显示/隐藏主窗口（托盘驻留时亦可用，便于游戏中快速唤出）。
+- **快捷键配置**：配置面板新增「快捷键」标签，支持点击录制自定义组合键、恢复默认值；设置持久化至 `localStorage`。
+- **注册失败提示**：启动或更换快捷键时，若组合键被其他程序占用或无效，会通过 toast 提示。
+
+### 变更
+
+- 主窗口 toggle 逻辑：可见且未最小化时隐藏至托盘；隐藏或最小化时恢复并聚焦。
+- 版本号更新为 1.1.1（含 Cargo 同步）。
+
+### 技术
+
+- 接入 `tauri-plugin-global-shortcut` / `@tauri-apps/plugin-global-shortcut`。
+- 新增 `src/lib/windowToggleShortcut.ts`、`src/components/ShortcutSettings.tsx`。
+- 补充 Tauri 权限：`core:window:allow-hide`、`allow-is-visible`、`allow-is-minimized`、`allow-unminimize` 及 `global-shortcut:*`。
+
+---
+
 ## [1.1.0] - 2026-06-11
 
 ### 新增

@@ -2,11 +2,13 @@ import { GripVertical, KeyRound, Plus, Save, X } from "lucide-solid";
 import { createEffect, createSignal, For, Match, Switch } from "solid-js";
 import type { ServerGroup } from "../types";
 import { AppearanceSettings } from "./AppearanceSettings";
+import { ShortcutSettings } from "./ShortcutSettings";
 
-type SettingsTab = "appearance" | "servers" | "professions" | "security";
+type SettingsTab = "appearance" | "shortcuts" | "servers" | "professions" | "security";
 
 const settingsTabs: { id: SettingsTab; label: string }[] = [
   { id: "appearance", label: "外观" },
+  { id: "shortcuts", label: "快捷键" },
   { id: "servers", label: "分组配置" },
   { id: "professions", label: "职业配置" },
   { id: "security", label: "重置主密码" },
@@ -107,7 +109,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
         <div class="panel-title">
           <div class="panel-heading">
             <strong>配置</strong>
-            <span>外观、职业与安全设置</span>
+            <span>外观、快捷键、职业与安全设置</span>
           </div>
           <button class="ghost-button compact" type="button" onClick={props.onClose}>
             关闭
@@ -136,6 +138,11 @@ export function SettingsPanel(props: SettingsPanelProps) {
               <Match when={activeTab() === "appearance"}>
                 <p class="settings-tab-desc">预设主题、面板样式，以及强调色与背景高级选项</p>
                 <AppearanceSettings />
+              </Match>
+
+              <Match when={activeTab() === "shortcuts"}>
+                <p class="settings-tab-desc">全局快捷键，用于快速显示或隐藏主窗口</p>
+                <ShortcutSettings />
               </Match>
 
               <Match when={activeTab() === "servers"}>

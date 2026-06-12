@@ -683,6 +683,71 @@ textarea {
   justify-content: flex-end;
 }
 
+.shortcut-settings {
+  display: grid;
+  gap: 0.42rem;
+}
+
+.shortcut-settings-row {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.shortcut-settings-copy {
+  display: grid;
+  gap: 0.12rem;
+}
+
+.shortcut-settings-copy strong {
+  font-size: var(--text-sm);
+  color: #e2e8f0;
+}
+
+.shortcut-settings-copy span {
+  color: #94a3b8;
+  font-size: var(--text-xs);
+  line-height: var(--leading-normal);
+}
+
+.shortcut-settings-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.34rem;
+}
+
+.shortcut-display {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.34rem;
+  min-width: 10rem;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: var(--radius-base);
+  background: rgba(15, 23, 42, 0.72);
+  color: #e2e8f0;
+  font-family: inherit;
+  font-size: var(--text-sm);
+  padding: 0.38rem 0.58rem;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.shortcut-display:hover,
+.shortcut-display.is-recording {
+  border-color: rgba(56, 189, 248, 0.45);
+  background: rgba(14, 165, 233, 0.12);
+}
+
+.shortcut-settings-error {
+  margin: 0;
+  color: #fca5a5;
+  font-size: var(--text-xs);
+}
+
+.shortcut-settings-hint {
+  margin-top: 0.12rem;
+}
+
 .tag-list {
   display: flex;
   flex-wrap: wrap;
