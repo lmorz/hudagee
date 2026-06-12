@@ -151,8 +151,8 @@ export function AccountList(props: AccountListProps) {
                   <GripVertical size={14} />
                 </span>
                 <div class="identity-cell">
-                  <strong>{account.characterName}</strong>
                   <span class="profession-tag">{account.profession || "未配置"}</span>
+                  <strong>{account.characterName}</strong>
                 </div>
                 <div class="secret-cell">
                   <button
