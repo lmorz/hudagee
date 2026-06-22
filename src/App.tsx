@@ -11,8 +11,9 @@ import { TopBar } from "./components/TopBar";
 import type { AccountEntry, AccountForm, ServerGroup, VaultData } from "./types";
 import { readBackupFile, saveBackupFile } from "./lib/backup";
 import { buildShareText, copyText, parseShareText, readClipboardText } from "./lib/clipboard";
+import { initLaunchAtStartup, readLaunchAtStartupPreference } from "./lib/autostart";
 import { readLastSelectedServerId, resolveSelectedServerId, writeLastSelectedServerId } from "./lib/preferences";
-import { revealMainWindow, isTauriRuntime } from "./lib/tauri";
+import { revealMainWindow, isTauriRuntime, isAutostartSession } from "./lib/tauri";
 import {
   createAccount,
   createEmptyVault,
@@ -121,6 +122,11 @@ function App() {
     void initWindowToggleShortcut().catch((initError) => {
       toast.warning(initError instanceof Error ? initError.message : "全局快捷键注册失败，可在配置中更换组合键");
     });
+    void initLaunchAtStartup().catch(() => {
+      if (readLaunchAtStartupPreference()) {
+        toast.warning("开机启动设置未能同步，可在配置中重新开启");
+      }
+    });
   });
 
   createEffect(() => {
@@ -128,12 +134,18 @@ function App() {
       return;
     }
 
-    // 等 Solid 绘制完成后再显示窗口，避免白屏或启动占位一闪而过
-    requestAnimationFrame(() => {
+    void (async () => {
+      if (isTauriRuntime() && (await isAutostartSession())) {
+        return;
+      }
+
+      // 等 Solid 绘制完成后再显示窗口，避免白屏或启动占位一闪而过
       requestAnimationFrame(() => {
-        revealMainWindow();
+        requestAnimationFrame(() => {
+          void revealMainWindow();
+        });
       });
-    });
+    })();
   });
 
   const sortedServers = createMemo(() =>

@@ -2,11 +2,13 @@ import { GripVertical, KeyRound, Plus, Save, X } from "lucide-solid";
 import { createEffect, createSignal, For, Match, Switch } from "solid-js";
 import type { ServerGroup } from "../types";
 import { AppearanceSettings } from "./AppearanceSettings";
+import { GeneralSettings } from "./GeneralSettings";
 import { ShortcutSettings } from "./ShortcutSettings";
 
-type SettingsTab = "appearance" | "shortcuts" | "servers" | "professions" | "security";
+type SettingsTab = "general" | "appearance" | "shortcuts" | "servers" | "professions" | "security";
 
 const settingsTabs: { id: SettingsTab; label: string }[] = [
+  { id: "general", label: "常规" },
   { id: "appearance", label: "外观" },
   { id: "shortcuts", label: "快捷键" },
   { id: "servers", label: "分组配置" },
@@ -35,7 +37,7 @@ type SettingsPanelProps = {
 };
 
 export function SettingsPanel(props: SettingsPanelProps) {
-  const [activeTab, setActiveTab] = createSignal<SettingsTab>("appearance");
+  const [activeTab, setActiveTab] = createSignal<SettingsTab>("general");
   const [serverNameDrafts, setServerNameDrafts] = createSignal<Record<string, string>>({});
   const [draggedId, setDraggedId] = createSignal<string | null>(null);
   const [dropTarget, setDropTarget] = createSignal<{
@@ -109,7 +111,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
         <div class="panel-title">
           <div class="panel-heading">
             <strong>配置</strong>
-            <span>外观、快捷键、职业与安全设置</span>
+            <span>常规、外观、快捷键、职业与安全设置</span>
           </div>
           <button class="ghost-button compact" type="button" onClick={props.onClose}>
             关闭
@@ -135,6 +137,11 @@ export function SettingsPanel(props: SettingsPanelProps) {
 
           <div class="settings-tab-panel">
             <Switch>
+              <Match when={activeTab() === "general"}>
+                <p class="settings-tab-desc">系统级行为与启动选项</p>
+                <GeneralSettings />
+              </Match>
+
               <Match when={activeTab() === "appearance"}>
                 <p class="settings-tab-desc">预设主题、面板样式，以及强调色与背景高级选项</p>
                 <AppearanceSettings />

@@ -1,10 +1,13 @@
 use std::fs;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    AppHandle, Manager, WindowEvent,
+    AppHandle, Manager, WebviewWindow, WindowEvent,
 };
+
+static SHOULD_CENTER_ON_SHOW: AtomicBool = AtomicBool::new(true);
 
 fn vault_path(app: &AppHandle) -> Result<PathBuf, String> {
     let dir = app
@@ -42,12 +45,34 @@ fn delete_vault(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+fn is_autostart_launch() -> bool {
+    std::env::args().any(|arg| arg == "--autostart")
+}
+
 fn show_main_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
-        let _ = window.show();
-        let _ = window.unminimize();
-        let _ = window.set_focus();
+        show_webview_window(&window);
     }
+}
+
+fn show_webview_window(window: &WebviewWindow) {
+    if SHOULD_CENTER_ON_SHOW.swap(false, Ordering::Relaxed) {
+        let _ = window.center();
+    }
+    let _ = window.show();
+    let _ = window.unminimize();
+    let _ = window.set_focus();
+}
+
+#[tauri::command]
+fn reveal_main_window(app: AppHandle) -> Result<(), String> {
+    show_main_window(&app);
+    Ok(())
+}
+
+#[tauri::command]
+fn is_autostart_session() -> bool {
+    is_autostart_launch()
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -60,12 +85,24 @@ pub fn run() {
         show_main_window(app);
     }));
 
+    #[cfg(desktop)]
+    let builder = builder.plugin(tauri_plugin_autostart::init(
+        tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+        Some(vec!["--autostart"]),
+    ));
+
     builder
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-        .invoke_handler(tauri::generate_handler![read_vault, write_vault, delete_vault])
+        .invoke_handler(tauri::generate_handler![
+            read_vault,
+            write_vault,
+            delete_vault,
+            reveal_main_window,
+            is_autostart_session
+        ])
         .setup(|app| {
             let show = MenuItem::with_id(app, "show", "显示主界面", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;

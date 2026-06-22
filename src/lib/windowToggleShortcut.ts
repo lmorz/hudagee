@@ -1,6 +1,6 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { isRegistered, register, unregister } from "@tauri-apps/plugin-global-shortcut";
-import { isTauriRuntime } from "./tauri";
+import { hideMainWindow, isTauriRuntime, showMainWindowFromShortcut } from "./tauri";
 
 export const DEFAULT_WINDOW_TOGGLE_SHORTCUT = "Alt+Backquote";
 const STORAGE_KEY = "hudagee.windowToggleShortcut";
@@ -129,13 +129,11 @@ export async function toggleMainWindow() {
   const window = getCurrentWindow();
   const [visible, minimized] = await Promise.all([window.isVisible(), window.isMinimized()]);
   if (visible && !minimized) {
-    await window.hide();
+    await hideMainWindow();
     return;
   }
 
-  await window.show();
-  await window.unminimize();
-  await window.setFocus();
+  await showMainWindowFromShortcut();
 }
 
 async function unregisterActiveShortcut() {

@@ -748,6 +748,79 @@ textarea {
   margin-top: 0.12rem;
 }
 
+.general-settings {
+  display: grid;
+  gap: 0.42rem;
+}
+
+.general-settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.general-settings-copy {
+  display: grid;
+  gap: 0.12rem;
+  min-width: 0;
+}
+
+.general-settings-copy strong {
+  font-size: var(--text-sm);
+  color: #e2e8f0;
+}
+
+.general-settings-copy span {
+  color: #94a3b8;
+  font-size: var(--text-xs);
+  line-height: var(--leading-normal);
+}
+
+.setting-toggle {
+  position: relative;
+  flex-shrink: 0;
+  width: 2.5rem;
+  height: 1.4rem;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.82);
+  padding: 0;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.setting-toggle:hover:not(:disabled) {
+  border-color: rgba(56, 189, 248, 0.45);
+}
+
+.setting-toggle.is-on {
+  border-color: rgba(56, 189, 248, 0.55);
+  background: rgba(14, 165, 233, 0.28);
+}
+
+.setting-toggle:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.setting-toggle-thumb {
+  position: absolute;
+  top: 50%;
+  left: 0.14rem;
+  width: 1rem;
+  height: 1rem;
+  border-radius: 999px;
+  background: #cbd5e1;
+  transform: translateY(-50%);
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+
+.setting-toggle.is-on .setting-toggle-thumb {
+  transform: translate(1.05rem, -50%);
+  background: #e0f2fe;
+}
+
 .tag-list {
   display: flex;
   flex-wrap: wrap;
