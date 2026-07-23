@@ -13,7 +13,8 @@ import { readBackupFile, saveBackupFile } from "./lib/backup";
 import { buildShareText, copyText, parseShareText, readClipboardText } from "./lib/clipboard";
 import { initLaunchAtStartup, readLaunchAtStartupPreference } from "./lib/autostart";
 import { readLastSelectedServerId, resolveSelectedServerId, writeLastSelectedServerId } from "./lib/preferences";
-import { revealMainWindow, isTauriRuntime, isAutostartSession } from "./lib/tauri";
+import { revealMainWindow, isTauriRuntime, isAutostartSession, isMobilePlatform } from "./lib/tauri";
+import { MobileApp } from "./components/mobile/MobileApp";
 import {
   createAccount,
   createEmptyVault,
@@ -115,7 +116,7 @@ function App() {
   });
 
   onMount(() => {
-    if (!isTauriRuntime()) {
+    if (!isTauriRuntime() || isMobilePlatform()) {
       return;
     }
 
@@ -130,7 +131,7 @@ function App() {
   });
 
   createEffect(() => {
-    if (authMode() === "loading") {
+    if (authMode() === "loading" || isMobilePlatform()) {
       return;
     }
 
@@ -910,6 +911,14 @@ function App() {
         </Match>
 
       <Match when={authMode() === "ready"}>
+        <Show when={!isMobilePlatform()} fallback={
+          <MobileApp
+            vault={vault()}
+            masterPassword={masterPassword()}
+            onLock={lockApp}
+            onVaultChange={setVault}
+          />
+        }>
         <div class="app-shell">
           <main class="content">
             <TopBar
@@ -1078,6 +1087,7 @@ function App() {
             </Show>
           </main>
         </div>
+        </Show>
       </Match>
       </Switch>
 

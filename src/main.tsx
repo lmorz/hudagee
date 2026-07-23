@@ -2,6 +2,7 @@ import { render } from "solid-js/web";
 import App from "./App";
 import { applyAppearance, readAppearance } from "./lib/theme";
 import "./style.css";
+import "./style-mobile.css";
 
 void applyAppearance(readAppearance());
 

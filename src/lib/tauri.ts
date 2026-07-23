@@ -5,6 +5,14 @@ export function isTauriRuntime() {
   return "__TAURI_INTERNALS__" in window;
 }
 
+export function isMobilePlatform() {
+  if (!isTauriRuntime()) {
+    return false;
+  }
+  // Android WebView 的 User-Agent 包含 "Android"
+  return /Android/i.test(navigator.userAgent);
+}
+
 export async function revealMainWindow() {
   if (!isTauriRuntime()) {
     return;

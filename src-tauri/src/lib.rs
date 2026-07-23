@@ -1,12 +1,16 @@
 use std::fs;
 use std::path::PathBuf;
+#[allow(unused_imports)]
 use std::sync::atomic::{AtomicBool, Ordering};
+use tauri::{AppHandle, Manager, WebviewWindow};
+
+#[cfg(desktop)]
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    AppHandle, Manager, WebviewWindow, WindowEvent,
 };
 
+#[cfg_attr(not(desktop), allow(dead_code))]
 static SHOULD_CENTER_ON_SHOW: AtomicBool = AtomicBool::new(true);
 
 fn vault_path(app: &AppHandle) -> Result<PathBuf, String> {
@@ -56,10 +60,12 @@ fn show_main_window(app: &AppHandle) {
 }
 
 fn show_webview_window(window: &WebviewWindow) {
+    #[cfg(desktop)]
     if SHOULD_CENTER_ON_SHOW.swap(false, Ordering::Relaxed) {
         let _ = window.center();
     }
     let _ = window.show();
+    #[cfg(desktop)]
     let _ = window.unminimize();
     let _ = window.set_focus();
 }
@@ -79,67 +85,79 @@ fn is_autostart_session() -> bool {
 pub fn run() {
     let builder = tauri::Builder::default();
 
-    // 单实例：重复启动时唤起已驻留托盘的窗口（必须最先注册）
+    // 单实例：重复启动时唤起已驻留托盘的窗口（桌面专用）
     #[cfg(desktop)]
     let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
         show_main_window(app);
     }));
 
+    // 开机自启（桌面专用）
     #[cfg(desktop)]
     let builder = builder.plugin(tauri_plugin_autostart::init(
         tauri_plugin_autostart::MacosLauncher::LaunchAgent,
         Some(vec!["--autostart"]),
     ));
 
-    builder
+    // 通用插件（桌面 + 移动端均支持）
+    let builder = builder
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_fs::init())
-        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-        .invoke_handler(tauri::generate_handler![
-            read_vault,
-            write_vault,
-            delete_vault,
-            reveal_main_window,
-            is_autostart_session
-        ])
-        .setup(|app| {
-            let show = MenuItem::with_id(app, "show", "显示主界面", true, None::<&str>)?;
-            let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&show, &quit])?;
+        .plugin(tauri_plugin_fs::init());
 
-            TrayIconBuilder::new()
-                .icon(app.default_window_icon().expect("缺少应用图标").clone())
-                .tooltip("HuDaGee 账号管家")
-                .menu(&menu)
-                .show_menu_on_left_click(false)
-                .on_menu_event(|app, event| match event.id.as_ref() {
-                    "show" => show_main_window(app),
-                    "quit" => app.exit(0),
-                    _ => {}
-                })
-                .on_tray_icon_event(|tray, event| {
-                    // 左键单击托盘图标恢复主窗口
-                    if let TrayIconEvent::Click {
-                        button: MouseButton::Left,
-                        button_state: MouseButtonState::Up,
-                        ..
-                    } = event
-                    {
-                        show_main_window(tray.app_handle());
-                    }
-                })
-                .build(app)?;
+    #[cfg(desktop)]
+    let builder = builder.plugin(tauri_plugin_global_shortcut::Builder::new().build());
 
-            Ok(())
-        })
-        .on_window_event(|window, event| {
-            // 点击关闭按钮时隐藏到托盘而不是退出
-            if let WindowEvent::CloseRequested { api, .. } = event {
-                api.prevent_close();
-                let _ = window.hide();
-            }
-        })
+    let builder = builder.invoke_handler(tauri::generate_handler![
+        read_vault,
+        write_vault,
+        delete_vault,
+        reveal_main_window,
+        is_autostart_session
+    ]);
+
+    // 桌面专用 setup：托盘图标与右键菜单
+    #[cfg(desktop)]
+    let builder = builder.setup(|app| {
+        let show = MenuItem::with_id(app, "show", "显示主界面", true, None::<&str>)?;
+        let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
+        let menu = Menu::with_items(app, &[&show, &quit])?;
+
+        TrayIconBuilder::new()
+            .icon(app.default_window_icon().expect("缺少应用图标").clone())
+            .tooltip("HuDaGee 账号管家")
+            .menu(&menu)
+            .show_menu_on_left_click(false)
+            .on_menu_event(|app, event| match event.id.as_ref() {
+                "show" => show_main_window(app),
+                "quit" => app.exit(0),
+                _ => {}
+            })
+            .on_tray_icon_event(|tray, event| {
+                // 左键单击托盘图标恢复主窗口
+                if let TrayIconEvent::Click {
+                    button: MouseButton::Left,
+                    button_state: MouseButtonState::Up,
+                    ..
+                } = event
+                {
+                    show_main_window(tray.app_handle());
+                }
+            })
+            .build(app)?;
+
+        Ok(())
+    });
+
+    // 桌面专用窗口事件：关闭时隐藏到托盘而不是退出
+    #[cfg(desktop)]
+    let builder = builder.on_window_event(|window, event| {
+        if let WindowEvent::CloseRequested { api, .. } = event {
+            api.prevent_close();
+            let _ = window.hide();
+        }
+    });
+
+    builder
         .build(tauri::generate_context!())
         .expect("error while running tauri application")
         .run(|_app, _event| {

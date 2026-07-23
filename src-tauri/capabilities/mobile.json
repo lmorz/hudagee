@@ -1,10 +1,9 @@
 {
-  "identifier": "default",
-  "description": "Cross-platform permissions for HuDaGee",
+  "identifier": "mobile",
+  "description": "Default permissions for HuDaGee on Android",
   "windows": ["main"],
   "permissions": [
     "core:default",
-    "core:window:allow-set-background-color",
     "clipboard-manager:allow-read-text",
     "clipboard-manager:allow-write-text",
     "dialog:allow-open",
