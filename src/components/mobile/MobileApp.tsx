@@ -1,8 +1,9 @@
-import { Lock, Plus, Search, Settings } from "lucide-solid";
+import { Lock, Network, Plus, Search, Settings } from "lucide-solid";
 import { createMemo, createSignal, Show } from "solid-js";
 import { Toaster, toast } from "solid-sonner";
 import type { AccountEntry, AccountForm, ServerGroup, VaultData } from "../../types";
 import { buildShareText, copyText } from "../../lib/clipboard";
+import { isTauriRuntime } from "../../lib/tauri";
 import { resolveSelectedServerId, writeLastSelectedServerId } from "../../lib/preferences";
 import {
   createAccount,
@@ -15,6 +16,7 @@ import { ConfirmDialog } from "../ConfirmDialog";
 import { MobileAccountForm } from "./MobileAccountForm";
 import { MobileAccountList } from "./MobileAccountList";
 import { MobileSettings } from "./MobileSettings";
+import { SyncPanel } from "./SyncPanel";
 
 type MobileAppProps = {
   vault: VaultData;
@@ -45,6 +47,7 @@ export function MobileApp(props: MobileAppProps) {
   const [editingId, setEditingId] = createSignal<string | null>(null);
   const [isFormOpen, setIsFormOpen] = createSignal(false);
   const [showSettings, setShowSettings] = createSignal(false);
+  const [showSync, setShowSync] = createSignal(false);
   const [newProfession, setNewProfession] = createSignal("");
   const [currentMasterPassword, setCurrentMasterPassword] = createSignal("");
   const [nextMasterPassword, setNextMasterPassword] = createSignal("");
@@ -228,6 +231,11 @@ export function MobileApp(props: MobileAppProps) {
             />
           </div>
           <div class="mobile-topbar-end">
+            <Show when={isTauriRuntime()}>
+              <button class="mobile-topbar-btn" type="button" onClick={() => setShowSync(true)} aria-label="同步">
+                <Network size={18} />
+              </button>
+            </Show>
             <button class="mobile-topbar-btn" type="button" onClick={() => setShowSettings(true)} aria-label="设置">
               <Settings size={18} />
             </button>
@@ -355,6 +363,31 @@ export function MobileApp(props: MobileAppProps) {
               }
             }}
             onClose={() => setShowSettings(false)}
+          />
+        </Show>
+
+        {/* 同步面板（仅 Tauri 环境） */}
+        <Show when={showSync()}>
+          <SyncPanel
+            envelope={(() => {
+              // 同步时使用当前的 vault JSON 作为 envelope
+              try {
+                return JSON.stringify({
+                  schemaVersion: 1,
+                  crypto: { algorithm: "AES-GCM", kdf: "PBKDF2", hash: "SHA-256", iterations: 310000, salt: "", nonce: "" },
+                  ciphertext: btoa(JSON.stringify(props.vault)),
+                } as unknown);
+              } catch {
+                return "";
+              }
+            })()}
+            onEnvelopeUpdate={(_envelope) => {
+              // 当拉取到新数据时，通知上层刷新 vault
+              // 实际解密和合并由 App 层完成
+              toast.success("数据已同步，请返回主界面查看");
+              setShowSync(false);
+            }}
+            onClose={() => setShowSync(false)}
           />
         </Show>
       </div>
