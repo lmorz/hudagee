@@ -24,4 +24,5 @@ dist-ssr
 *.sw?
 
 src-tauri/target
+src-tauri/.cargo/config.toml
 dist-release/

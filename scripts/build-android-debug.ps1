@@ -46,17 +46,22 @@ $dstDir = "src-tauri\gen\android\app\src\main\jniLibs\arm64-v8a"
 New-Item -ItemType Directory -Force -Path $dstDir | Out-Null
 Copy-Item $srcSo (Join-Path $dstDir "libhudagee_lib.so") -Force
 
-Write-Host "=== 4/4 gradle assembleUniversalDebug ==="
+Write-Host "=== 4/4 gradle assembleArm64Debug（仅 arm64-v8a，与已复制的 .so 一致）==="
 Set-Location "src-tauri\gen\android"
-.\gradlew assembleUniversalDebug --no-daemon `
-  -x app:rustBuildUniversalDebug `
+.\gradlew assembleArm64Debug --no-daemon `
   -x app:rustBuildArm64Debug `
   -x app:rustBuildArmDebug `
   -x app:rustBuildX86Debug `
-  -x app:rustBuildX86_64Debug
+  -x app:rustBuildX86_64Debug `
+  -x app:rustBuildUniversalDebug
 if ($LASTEXITCODE -ne 0) { throw "gradle failed" }
 
-$apk = Join-Path $Root "src-tauri\gen\android\app\build\outputs\apk\universal\debug\app-universal-debug.apk"
+$apk = Join-Path $Root "src-tauri\gen\android\app\build\outputs\apk\arm64\debug\app-arm64-debug.apk"
+if (-not (Test-Path $apk)) {
+  $apk = Get-ChildItem (Join-Path $Root "src-tauri\gen\android\app\build\outputs\apk") -Recurse -Filter "*arm64*debug*.apk" |
+    Sort-Object LastWriteTime -Descending |
+    Select-Object -First 1 -ExpandProperty FullName
+}
 Write-Host ""
 Write-Host "完成: $apk"
 Get-Item $apk | Format-List Length, LastWriteTime

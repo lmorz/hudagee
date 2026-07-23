@@ -1,5 +1,5 @@
 import { ArrowLeft, Plus, X } from "lucide-solid";
-import { For, Show } from "solid-js";
+import { createEffect, createSignal, For, Show } from "solid-js";
 import type { ServerGroup, VaultData } from "../../types";
 import { isTauriRuntime } from "../../lib/tauri";
 import { AppearanceSettings } from "../AppearanceSettings";
@@ -18,7 +18,7 @@ type MobileSettingsProps = {
   onNewProfessionInput: (value: string) => void;
   onAddProfession: (event: Event) => void;
   onDeleteProfession: (profession: string) => void;
-  onRenameServer: (serverId: string, name: string) => void;
+  onRenameServer: (serverId: string, name: string) => boolean | Promise<boolean>;
   onCurrentMasterPasswordInput: (value: string) => void;
   onNextMasterPasswordInput: (value: string) => void;
   onConfirmNextMasterPasswordInput: (value: string) => void;
@@ -27,6 +27,25 @@ type MobileSettingsProps = {
 };
 
 export function MobileSettings(props: MobileSettingsProps) {
+  const [serverNameDrafts, setServerNameDrafts] = createSignal<Record<string, string>>({});
+  const serverNameDraft = (server: ServerGroup) => serverNameDrafts()[server.id] ?? server.name;
+
+  createEffect(() => {
+    setServerNameDrafts(Object.fromEntries(props.servers.map((server) => [server.id, server.name])));
+  });
+
+  async function commitServerName(server: ServerGroup) {
+    const draft = serverNameDraft(server);
+    try {
+      const ok = await props.onRenameServer(server.id, draft);
+      if (!ok) {
+        setServerNameDrafts((prev) => ({ ...prev, [server.id]: server.name }));
+      }
+    } catch {
+      setServerNameDrafts((prev) => ({ ...prev, [server.id]: server.name }));
+    }
+  }
+
   return (
     <div class="mobile-fullscreen-form">
       <div class="mobile-form-header">
@@ -64,16 +83,19 @@ export function MobileSettings(props: MobileSettingsProps) {
                   class="mobile-settings-row"
                   onSubmit={(event) => {
                     event.preventDefault();
-                    const input = event.currentTarget.querySelector("input");
-                    if (input) {
-                      props.onRenameServer(server.id, input.value);
-                    }
+                    void commitServerName(server);
                   }}
                 >
                   <input
                     class="mobile-settings-input"
-                    value={server.name}
-                    onInput={() => {}}
+                    value={serverNameDraft(server)}
+                    onInput={(event) => {
+                      const value = event.currentTarget.value;
+                      setServerNameDrafts((prev) => ({ ...prev, [server.id]: value }));
+                    }}
+                    onBlur={() => {
+                      void commitServerName(server);
+                    }}
                     placeholder="分组名称"
                   />
                 </form>

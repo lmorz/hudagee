@@ -125,6 +125,7 @@ powershell -ExecutionPolicy Bypass -File scripts/build-android-debug.ps1
 >
 > - 手动 `cargo build` 生产库依赖 `Cargo.toml` 中的 `default = ["custom-protocol"]`。缺少该 feature 会走开发模式并请求 `http://localhost:1420/`，安装后白屏。
 > - 手动 `cargo build --target aarch64-linux-android` **之前必须先设置 NDK 环境变量**，否则会报找不到 `aarch64-linux-android-clang`。
+> - 也可复制 `src-tauri/.cargo/config.toml.example` 为 `config.toml` 并填写本机 NDK 路径（该文件已 gitignore，勿提交）。
 
 ```powershell
 $env:ANDROID_HOME = "$env:LOCALAPPDATA\Android\Sdk"
@@ -156,21 +157,21 @@ Copy-Item src-tauri\target\aarch64-linux-android\release\libhudagee_lib.so `
 $env:JAVA_HOME = "C:\Program Files\Android\Android Studio\jbr"
 $env:ANDROID_HOME = "$env:LOCALAPPDATA\Android\Sdk"
 Set-Location src-tauri\gen\android
-.\gradlew assembleUniversalDebug --no-daemon `
-  -x app:rustBuildUniversalDebug `
+.\gradlew assembleArm64Debug --no-daemon `
   -x app:rustBuildArm64Debug `
   -x app:rustBuildArmDebug `
   -x app:rustBuildX86Debug `
-  -x app:rustBuildX86_64Debug
+  -x app:rustBuildX86_64Debug `
+  -x app:rustBuildUniversalDebug
 Set-Location ..\..\..
 ```
 
-> **注意**：`-x` 跳过 Gradle 内的 Rust 构建（已在第 1 步手动完成），同时避免 Windows 符号链接权限不足，以及旧版脚本 `--copy` 参数与当前 CLI 不兼容的问题。
+> **注意**：`-x` 跳过 Gradle 内的 Rust 构建（已在第 1 步手动完成），同时避免 Windows 符号链接权限不足，以及旧版脚本 `--copy` 参数与当前 CLI 不兼容的问题。当前一键脚本只打 **arm64-v8a**（与手动复制的 `.so` 一致），不要用 `assembleUniversal*` 除非已为各 ABI 都编好原生库。
 
 APK 产物位于：
 
 ```text
-src-tauri\gen\android\app\build\outputs\apk\universal\debug\app-universal-debug.apk
+src-tauri\gen\android\app\build\outputs\apk\arm64\debug\app-arm64-debug.apk
 ```
 
 ### 安装 APK
@@ -179,7 +180,7 @@ src-tauri\gen\android\app\build\outputs\apk\universal\debug\app-universal-debug.
 
 ```powershell
 & "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe" install -r `
-  src-tauri\gen\android\app\build\outputs\apk\universal\debug\app-universal-debug.apk
+  src-tauri\gen\android\app\build\outputs\apk\arm64\debug\app-arm64-debug.apk
 ```
 
 ## 局域网同步

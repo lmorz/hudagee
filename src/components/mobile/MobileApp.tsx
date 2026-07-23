@@ -391,9 +391,20 @@ export function MobileApp(props: MobileAppProps) {
             }}
             onRenameServer={async (serverId, name) => {
               const nextName = name.trim();
-              if (!nextName) return;
+              if (!nextName) {
+                toast.error("分组名称不能为空");
+                return false;
+              }
               const current = props.vault.servers.find((s) => s.id === serverId);
-              if (!current || current.name === nextName) return;
+              if (!current || current.name === nextName) return true;
+              if (
+                props.vault.servers.some(
+                  (server) => server.id !== serverId && server.name.trim() === nextName,
+                )
+              ) {
+                toast.error("同名分组已存在");
+                return false;
+              }
               await persist({
                 ...props.vault,
                 servers: props.vault.servers.map((s) =>
@@ -401,6 +412,7 @@ export function MobileApp(props: MobileAppProps) {
                 ),
               });
               toast.success("分组已更新");
+              return true;
             }}
             onCurrentMasterPasswordInput={setCurrentMasterPassword}
             onNextMasterPasswordInput={setNextMasterPassword}

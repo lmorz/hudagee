@@ -1,8 +1,6 @@
 use std::fs;
 use std::path::PathBuf;
-#[allow(unused_imports)]
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::atomic::AtomicU16;
+use std::sync::atomic::{AtomicBool, AtomicU16, Ordering};
 use std::sync::Mutex;
 #[allow(unused_imports)]
 use tauri::{AppHandle, Manager, WebviewWindow, WindowEvent};
@@ -18,10 +16,23 @@ use tauri::{
 
 /// 当前同步服务的端口（0 = 未运行）
 static SYNC_PORT: AtomicU16 = AtomicU16::new(0);
+/// 是否正在启动同步服务（防止并发 start）
+static SYNC_STARTING: AtomicBool = AtomicBool::new(false);
 /// 同步服务配对码
 static SYNC_PAIR_CODE: Mutex<Option<String>> = Mutex::new(None);
 /// 优雅停止同步服务的信号发送端
 static SYNC_SHUTDOWN_TX: Mutex<Option<oneshot::Sender<()>>> = Mutex::new(None);
+
+fn clear_sync_runtime_state() {
+    SYNC_PORT.store(0, Ordering::Relaxed);
+    SYNC_STARTING.store(false, Ordering::Relaxed);
+    if let Ok(mut code) = SYNC_PAIR_CODE.lock() {
+        *code = None;
+    }
+    if let Ok(mut guard) = SYNC_SHUTDOWN_TX.lock() {
+        *guard = None;
+    }
+}
 
 #[cfg_attr(not(desktop), allow(dead_code))]
 static SHOULD_CENTER_ON_SHOW: AtomicBool = AtomicBool::new(true);
@@ -97,53 +108,96 @@ fn is_autostart_session() -> bool {
 /// 启动同步服务，返回配对码
 #[tauri::command]
 async fn start_sync_server(app: AppHandle, port: u16) -> Result<String, String> {
-    let prev = SYNC_PORT.load(Ordering::Relaxed);
-    if prev != 0 {
-        return Err("同步服务已在运行中".to_string());
-    }
-
-    let vault_path = vault_path(&app)?.to_string_lossy().to_string();
-    let pair_code = sync::generate_pair_code();
-    {
-        let mut code = SYNC_PAIR_CODE.lock().map_err(|e| e.to_string())?;
-        *code = Some(pair_code.clone());
-    }
-
     let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
+    let (ready_tx, ready_rx) = oneshot::channel::<Result<u16, String>>();
+
+    // 在同一把锁下声明启动并写入 shutdown，避免 stop 取不到信号却清掉状态
     {
         let mut guard = SYNC_SHUTDOWN_TX.lock().map_err(|e| e.to_string())?;
+        if SYNC_PORT.load(Ordering::Relaxed) != 0
+            || SYNC_STARTING.load(Ordering::Relaxed)
+            || guard.is_some()
+        {
+            return Err("同步服务已在运行中".to_string());
+        }
+        SYNC_STARTING.store(true, Ordering::SeqCst);
         *guard = Some(shutdown_tx);
+    }
+
+    let vault_path = match vault_path(&app) {
+        Ok(path) => path.to_string_lossy().to_string(),
+        Err(e) => {
+            clear_sync_runtime_state();
+            return Err(e);
+        }
+    };
+    let pair_code = sync::generate_pair_code();
+    {
+        let mut code = match SYNC_PAIR_CODE.lock() {
+            Ok(guard) => guard,
+            Err(e) => {
+                clear_sync_runtime_state();
+                return Err(e.to_string());
+            }
+        };
+        *code = Some(pair_code.clone());
     }
 
     let state_pair_code = pair_code.clone();
     let app_handle = app.clone();
 
-    SYNC_PORT.store(port, Ordering::Relaxed);
-
     tauri::async_runtime::spawn(async move {
         println!("启动同步服务 (port={port}, pair_code={state_pair_code})");
-        if let Err(e) =
-            sync::start_server(port, state_pair_code, vault_path, app_handle, shutdown_rx).await
+        if let Err(e) = sync::start_server(
+            port,
+            state_pair_code,
+            vault_path,
+            app_handle,
+            shutdown_rx,
+            ready_tx,
+        )
+        .await
         {
             eprintln!("同步服务异常退出: {e}");
         }
-        SYNC_PORT.store(0, Ordering::Relaxed);
-        if let Ok(mut code) = SYNC_PAIR_CODE.lock() {
-            *code = None;
-        }
-        if let Ok(mut guard) = SYNC_SHUTDOWN_TX.lock() {
-            *guard = None;
-        }
+        clear_sync_runtime_state();
     });
 
-    Ok(pair_code)
+    match ready_rx.await {
+        Ok(Ok(actual_port)) => {
+            // 持锁确认 shutdown 仍在：若启动期间已被 stop，则不要写回「运行中」
+            let guard = match SYNC_SHUTDOWN_TX.lock() {
+                Ok(guard) => guard,
+                Err(e) => {
+                    SYNC_STARTING.store(false, Ordering::Relaxed);
+                    return Err(e.to_string());
+                }
+            };
+            if guard.is_none() {
+                // 保持 STARTING=true，直到后台 serve 退出并 clear，避免 stop 过早返回
+                return Err("同步服务启动已取消".to_string());
+            }
+            SYNC_PORT.store(actual_port, Ordering::Relaxed);
+            SYNC_STARTING.store(false, Ordering::Relaxed);
+            drop(guard);
+            Ok(pair_code)
+        }
+        Ok(Err(e)) => {
+            clear_sync_runtime_state();
+            Err(e)
+        }
+        Err(_) => {
+            clear_sync_runtime_state();
+            Err("同步服务启动中断".to_string())
+        }
+    }
 }
 
 /// 停止同步服务
 #[tauri::command]
 async fn stop_sync_server() -> Result<(), String> {
     let prev = SYNC_PORT.load(Ordering::Relaxed);
-    if prev == 0 {
+    if prev == 0 && !SYNC_STARTING.load(Ordering::Relaxed) {
         return Err("同步服务未运行".to_string());
     }
 
@@ -155,24 +209,27 @@ async fn stop_sync_server() -> Result<(), String> {
     if let Some(tx) = tx {
         let _ = tx.send(());
     } else {
-        SYNC_PORT.store(0, Ordering::Relaxed);
-        return Err("同步服务停止信号不可用".to_string());
+        // 另一次 stop 可能已发出信号；等待其完成，勿误清仍在监听的服务
+        for _ in 0..100 {
+            if SYNC_PORT.load(Ordering::Relaxed) == 0 && !SYNC_STARTING.load(Ordering::Relaxed) {
+                return Ok(());
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+        return Err("同步服务正在停止中，请稍后重试".to_string());
     }
 
     // 等待服务退出并清理端口标志
-    for _ in 0..50 {
-        if SYNC_PORT.load(Ordering::Relaxed) == 0 {
-            break;
+    for _ in 0..100 {
+        if SYNC_PORT.load(Ordering::Relaxed) == 0 && !SYNC_STARTING.load(Ordering::Relaxed) {
+            return Ok(());
         }
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     }
 
-    {
-        let mut code = SYNC_PAIR_CODE.lock().map_err(|e| e.to_string())?;
-        *code = None;
-    }
-
-    Ok(())
+    // 超时强制清理状态，避免卡死无法重启；同时告知调用方可能仍占端口
+    clear_sync_runtime_state();
+    Err("同步服务停止超时，已重置状态；若端口仍被占用请稍后重试".to_string())
 }
 
 /// 获取同步服务状态

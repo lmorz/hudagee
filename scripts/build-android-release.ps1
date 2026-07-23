@@ -54,20 +54,20 @@ $dstDir = "src-tauri\gen\android\app\src\main\jniLibs\arm64-v8a"
 New-Item -ItemType Directory -Force -Path $dstDir | Out-Null
 Copy-Item $srcSo (Join-Path $dstDir "libhudagee_lib.so") -Force
 
-Write-Host "=== 4/4 gradle assembleUniversalRelease ==="
+Write-Host "=== 4/4 gradle assembleArm64Release（仅 arm64-v8a，与已复制的 .so 一致）==="
 Set-Location "src-tauri\gen\android"
-.\gradlew assembleUniversalRelease --no-daemon `
-  -x app:rustBuildUniversalRelease `
+.\gradlew assembleArm64Release --no-daemon `
   -x app:rustBuildArm64Release `
   -x app:rustBuildArmRelease `
   -x app:rustBuildX86Release `
-  -x app:rustBuildX86_64Release
+  -x app:rustBuildX86_64Release `
+  -x app:rustBuildUniversalRelease
 if ($LASTEXITCODE -ne 0) { throw "gradle failed" }
 
-$apk = Join-Path $Root "src-tauri\gen\android\app\build\outputs\apk\universal\release\app-universal-release.apk"
+$apk = Join-Path $Root "src-tauri\gen\android\app\build\outputs\apk\arm64\release\app-arm64-release.apk"
 if (-not (Test-Path $apk)) {
   # some AGP versions name differently
-  $apk = Get-ChildItem (Join-Path $Root "src-tauri\gen\android\app\build\outputs\apk") -Recurse -Filter "*release*.apk" |
+  $apk = Get-ChildItem (Join-Path $Root "src-tauri\gen\android\app\build\outputs\apk") -Recurse -Filter "*arm64*release*.apk" |
     Sort-Object LastWriteTime -Descending |
     Select-Object -First 1 -ExpandProperty FullName
 }

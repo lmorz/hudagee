@@ -173,13 +173,15 @@ async fn handle_post_vault(
     }
 }
 
-/// 启动 HTTP 同步服务（可通过 shutdown 信号优雅退出）
+/// 启动 HTTP 同步服务（可通过 shutdown 信号优雅退出）。
+/// `ready` 在端口绑定成功/失败后立即通知调用方，避免未监听却回报成功。
 pub async fn start_server(
     port: u16,
     pair_code: String,
     vault_path: String,
     app: AppHandle,
     shutdown: oneshot::Receiver<()>,
+    ready: oneshot::Sender<Result<u16, String>>,
 ) -> Result<(), String> {
     let state = Arc::new(AppState {
         pair_code: Mutex::new(pair_code),
@@ -190,15 +192,25 @@ pub async fn start_server(
     let router = create_router(state);
 
     let addr = format!("0.0.0.0:{port}");
-    let listener = tokio::net::TcpListener::bind(&addr)
-        .await
-        .map_err(|e| format!("绑定端口失败: {e}"))?;
+    let listener = match tokio::net::TcpListener::bind(&addr).await {
+        Ok(listener) => listener,
+        Err(e) => {
+            let msg = format!("绑定端口失败: {e}");
+            let _ = ready.send(Err(msg.clone()));
+            return Err(msg);
+        }
+    };
 
-    let actual_port = listener
-        .local_addr()
-        .map_err(|e| format!("获取端口失败: {e}"))?
-        .port();
+    let actual_port = match listener.local_addr() {
+        Ok(addr) => addr.port(),
+        Err(e) => {
+            let msg = format!("获取端口失败: {e}");
+            let _ = ready.send(Err(msg.clone()));
+            return Err(msg);
+        }
+    };
     println!("同步服务已启动: 0.0.0.0:{actual_port}");
+    let _ = ready.send(Ok(actual_port));
 
     axum::serve(listener, router)
         .with_graceful_shutdown(async {
