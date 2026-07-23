@@ -8,13 +8,15 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
-use tokio::sync::Mutex;
+use tauri::{AppHandle, Emitter};
+use tokio::sync::{oneshot, Mutex};
 use tower_http::cors::CorsLayer;
 
 /// 服务端状态
 pub struct AppState {
     pub pair_code: Mutex<String>,
     pub vault_path: Mutex<String>,
+    pub app: AppHandle,
 }
 
 /// 推送 vault 时的请求体
@@ -25,21 +27,17 @@ pub struct VaultPushRequest {
     pub sha256: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct SyncResponse {
     pub success: bool,
     pub message: String,
     pub sha256: Option<String>,
-    pub summary: Option<MergeSummary>,
 }
 
-#[derive(Serialize, Clone)]
-pub struct MergeSummary {
-    pub added_servers: u32,
-    pub merged_servers: u32,
-    pub added_accounts: u32,
-    pub skipped_accounts: u32,
-    pub added_professions: u32,
+#[derive(Serialize, Deserialize)]
+pub struct VaultPullPayload {
+    pub envelope: Option<String>,
+    pub sha256: String,
 }
 
 pub type SharedState = Arc<AppState>;
@@ -55,6 +53,10 @@ pub fn sha256_hex(data: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(data.as_bytes());
     hex::encode(hasher.finalize())
+}
+
+fn normalize_base_url(remote_url: &str) -> String {
+    remote_url.trim().trim_end_matches('/').to_string()
 }
 
 /// 构建路由
@@ -73,7 +75,6 @@ async fn handle_ping() -> Json<SyncResponse> {
         success: true,
         message: "pong".to_string(),
         sha256: None,
-        summary: None,
     })
 }
 
@@ -93,39 +94,36 @@ async fn handle_pair(
             success: true,
             message: "配对成功".to_string(),
             sha256: None,
-            summary: None,
         }))
     } else {
         Err(StatusCode::FORBIDDEN)
     }
 }
 
-/// GET /api/vault — 获取本地加密 vault
+/// GET /api/vault — 获取本地加密 vault（dumb 存储，不做解密/合并）
 async fn handle_get_vault(
     State(state): State<SharedState>,
     axum::extract::Query(params): axum::extract::Query<PairCodeParam>,
-) -> Result<Json<serde_json::Value>, StatusCode> {
-    // 验证配对码
+) -> Result<Json<VaultPullPayload>, StatusCode> {
     let expected_code = state.pair_code.lock().await;
     if params.pair_code != expected_code.as_str() {
         return Err(StatusCode::FORBIDDEN);
     }
     drop(expected_code);
 
-    // 读取 vault 文件
     let vault_path = state.vault_path.lock().await;
     match std::fs::read_to_string(vault_path.as_str()) {
         Ok(envelope) => {
             let sha = sha256_hex(&envelope);
-            Ok(Json(serde_json::json!({
-                "envelope": envelope,
-                "sha256": sha
-            })))
+            Ok(Json(VaultPullPayload {
+                envelope: Some(envelope),
+                sha256: sha,
+            }))
         }
-        Err(_) => Ok(Json(serde_json::json!({
-            "envelope": null,
-            "sha256": ""
-        }))),
+        Err(_) => Ok(Json(VaultPullPayload {
+            envelope: None,
+            sha256: String::new(),
+        })),
     }
 }
 
@@ -134,44 +132,34 @@ pub struct PairCodeParam {
     pub pair_code: String,
 }
 
-/// POST /api/vault — 接收远程 vault，合并后保存
+/// POST /api/vault — 接收远程加密 vault 并覆盖本地文件（合并在客户端完成）
 async fn handle_post_vault(
     State(state): State<SharedState>,
     Json(payload): Json<VaultPushRequest>,
 ) -> Result<Json<SyncResponse>, StatusCode> {
-    // 1. 验证配对码
     let expected_code = state.pair_code.lock().await;
     if payload.pair_code != expected_code.as_str() {
         return Err(StatusCode::FORBIDDEN);
     }
     drop(expected_code);
 
-    // 2. 校验 SHA-256 传输完整性
     let computed_sha = sha256_hex(&payload.envelope);
     if computed_sha != payload.sha256 {
         return Ok(Json(SyncResponse {
             success: false,
             message: "数据传输损坏，SHA-256 不匹配，请重试".to_string(),
             sha256: None,
-            summary: None,
         }));
     }
 
-    // 3. 读取本地 vault
     let vault_path = state.vault_path.lock().await;
-    let local_raw = std::fs::read_to_string(vault_path.as_str()).ok();
-
-    // 4. 写入收到的 vault（覆盖本地）
-    //    注意：实际的合并操作在客户端完成，服务端仅作存储
-    //    客户端在推送前已调用 mergeVaultData 确保数据完整
     match std::fs::write(vault_path.as_str(), &payload.envelope) {
         Ok(_) => {
-            let old_sha = local_raw.as_deref().map(sha256_hex);
+            let _ = state.app.emit("sync-vault-updated", ());
             Ok(Json(SyncResponse {
                 success: true,
                 message: "同步成功".to_string(),
-                sha256: old_sha,
-                summary: None,
+                sha256: Some(computed_sha),
             }))
         }
         Err(e) => {
@@ -180,36 +168,144 @@ async fn handle_post_vault(
                 success: false,
                 message: format!("写入 vault 文件失败: {e}"),
                 sha256: None,
-                summary: None,
             }))
         }
     }
 }
 
-/// 启动 HTTP 同步服务
+/// 启动 HTTP 同步服务（可通过 shutdown 信号优雅退出）
 pub async fn start_server(
     port: u16,
     pair_code: String,
     vault_path: String,
+    app: AppHandle,
+    shutdown: oneshot::Receiver<()>,
 ) -> Result<(), String> {
     let state = Arc::new(AppState {
         pair_code: Mutex::new(pair_code),
         vault_path: Mutex::new(vault_path),
+        app,
     });
 
-    let app = create_router(state);
+    let router = create_router(state);
 
     let addr = format!("0.0.0.0:{port}");
     let listener = tokio::net::TcpListener::bind(&addr)
         .await
         .map_err(|e| format!("绑定端口失败: {e}"))?;
 
-    let actual_port = listener.local_addr().map_err(|e| format!("获取端口失败: {e}"))?.port();
+    let actual_port = listener
+        .local_addr()
+        .map_err(|e| format!("获取端口失败: {e}"))?
+        .port();
     println!("同步服务已启动: 0.0.0.0:{actual_port}");
 
-    axum::serve(listener, app)
+    axum::serve(listener, router)
+        .with_graceful_shutdown(async {
+            let _ = shutdown.await;
+        })
         .await
         .map_err(|e| format!("服务运行失败: {e}"))?;
 
     Ok(())
+}
+
+fn http_client() -> Result<reqwest::Client, String> {
+    reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .map_err(|e| format!("创建 HTTP 客户端失败: {e}"))
+}
+
+/// 客户端：心跳检测
+pub async fn client_ping(remote_url: &str) -> Result<bool, String> {
+    let url = format!("{}/api/ping", normalize_base_url(remote_url));
+    let client = http_client()?;
+    match client.get(&url).send().await {
+        Ok(resp) => Ok(resp.status().is_success()),
+        Err(_) => Ok(false),
+    }
+}
+
+/// 客户端：拉取远程加密 vault
+/// 返回 Ok(None) 表示远程暂无数据；Ok(Some(envelope)) 为原始 envelope JSON 字符串
+pub async fn client_pull(remote_url: &str, pair_code: &str) -> Result<Option<String>, String> {
+    let url = format!(
+        "{}/api/vault?pair_code={}",
+        normalize_base_url(remote_url),
+        urlencoding_pair_code(pair_code)
+    );
+    let client = http_client()?;
+    let resp = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| format!("连接远程设备失败: {e}"))?;
+
+    let status = resp.status();
+    if status.as_u16() == 403 {
+        return Err("配对码错误".to_string());
+    }
+    if !status.is_success() {
+        return Err(format!("连接失败 ({status})"));
+    }
+
+    let data: VaultPullPayload = resp
+        .json()
+        .await
+        .map_err(|e| format!("解析远程响应失败: {e}"))?;
+
+    match data.envelope {
+        Some(envelope) => {
+            let computed = sha256_hex(&envelope);
+            if computed != data.sha256 {
+                return Err("数据传输损坏，请重试".to_string());
+            }
+            Ok(Some(envelope))
+        }
+        None => Ok(None),
+    }
+}
+
+/// 客户端：推送加密 vault
+pub async fn client_push(remote_url: &str, pair_code: &str, envelope: &str) -> Result<(), String> {
+    let url = format!("{}/api/vault", normalize_base_url(remote_url));
+    let sha = sha256_hex(envelope);
+    let client = http_client()?;
+    let resp = client
+        .post(&url)
+        .json(&serde_json::json!({
+            "pair_code": pair_code,
+            "envelope": envelope,
+            "sha256": sha,
+        }))
+        .send()
+        .await
+        .map_err(|e| format!("连接远程设备失败: {e}"))?;
+
+    let status = resp.status();
+    if status.as_u16() == 403 {
+        return Err("配对码错误".to_string());
+    }
+    if !status.is_success() {
+        return Err(format!("推送失败 ({status})"));
+    }
+
+    let data: SyncResponse = resp
+        .json()
+        .await
+        .map_err(|e| format!("解析远程响应失败: {e}"))?;
+
+    if !data.success {
+        return Err(data.message);
+    }
+    Ok(())
+}
+
+fn urlencoding_pair_code(pair_code: &str) -> String {
+    // 配对码仅为数字，安全直接拼接；仍做基础清理
+    pair_code
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .collect()
 }

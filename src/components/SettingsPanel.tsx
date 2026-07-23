@@ -1,11 +1,13 @@
 import { GripVertical, KeyRound, Plus, Save, X } from "lucide-solid";
-import { createEffect, createSignal, For, Match, Switch } from "solid-js";
-import type { ServerGroup } from "../types";
+import { createEffect, createSignal, For, Match, Show, Switch } from "solid-js";
+import type { ServerGroup, VaultData } from "../types";
+import { isTauriRuntime } from "../lib/tauri";
 import { AppearanceSettings } from "./AppearanceSettings";
 import { GeneralSettings } from "./GeneralSettings";
 import { ShortcutSettings } from "./ShortcutSettings";
+import { SyncPanel } from "./SyncPanel";
 
-type SettingsTab = "general" | "appearance" | "shortcuts" | "servers" | "professions" | "security";
+type SettingsTab = "general" | "appearance" | "shortcuts" | "servers" | "professions" | "sync" | "security";
 
 const settingsTabs: { id: SettingsTab; label: string }[] = [
   { id: "general", label: "常规" },
@@ -13,6 +15,7 @@ const settingsTabs: { id: SettingsTab; label: string }[] = [
   { id: "shortcuts", label: "快捷键" },
   { id: "servers", label: "分组配置" },
   { id: "professions", label: "职业配置" },
+  { id: "sync", label: "局域网同步" },
   { id: "security", label: "重置主密码" },
 ];
 
@@ -23,6 +26,9 @@ type SettingsPanelProps = {
   currentMasterPassword: string;
   nextMasterPassword: string;
   confirmNextMasterPassword: string;
+  vault: VaultData;
+  masterPassword: string;
+  onVaultChange: (vault: VaultData) => void;
   onNewProfessionInput: (value: string) => void;
   onAddProfession: (event: Event) => void;
   onDeleteProfession: (profession: string) => void;
@@ -245,6 +251,20 @@ export function SettingsPanel(props: SettingsPanelProps) {
                     )}
                   </For>
                 </div>
+              </Match>
+
+              <Match when={activeTab() === "sync"}>
+                <Show
+                  when={isTauriRuntime()}
+                  fallback={<p class="muted">局域网同步仅在桌面/移动客户端中可用。</p>}
+                >
+                  <SyncPanel
+                    variant="desktop"
+                    vault={props.vault}
+                    masterPassword={props.masterPassword}
+                    onVaultChange={props.onVaultChange}
+                  />
+                </Show>
               </Match>
 
               <Match when={activeTab() === "security"}>

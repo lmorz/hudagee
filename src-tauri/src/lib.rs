@@ -4,7 +4,9 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::atomic::AtomicU16;
 use std::sync::Mutex;
+#[allow(unused_imports)]
 use tauri::{AppHandle, Manager, WebviewWindow, WindowEvent};
+use tokio::sync::oneshot;
 
 mod sync;
 
@@ -18,6 +20,8 @@ use tauri::{
 static SYNC_PORT: AtomicU16 = AtomicU16::new(0);
 /// 同步服务配对码
 static SYNC_PAIR_CODE: Mutex<Option<String>> = Mutex::new(None);
+/// 优雅停止同步服务的信号发送端
+static SYNC_SHUTDOWN_TX: Mutex<Option<oneshot::Sender<()>>> = Mutex::new(None);
 
 #[cfg_attr(not(desktop), allow(dead_code))]
 static SHOULD_CENTER_ON_SHOW: AtomicBool = AtomicBool::new(true);
@@ -93,59 +97,88 @@ fn is_autostart_session() -> bool {
 /// 启动同步服务，返回配对码
 #[tauri::command]
 async fn start_sync_server(app: AppHandle, port: u16) -> Result<String, String> {
-    let prev = SYNC_PORT.load(std::sync::atomic::Ordering::Relaxed);
+    let prev = SYNC_PORT.load(Ordering::Relaxed);
     if prev != 0 {
         return Err("同步服务已在运行中".to_string());
     }
 
-    let vault_path = vault_path(&app)?
-        .to_string_lossy()
-        .to_string();
-
+    let vault_path = vault_path(&app)?.to_string_lossy().to_string();
     let pair_code = sync::generate_pair_code();
     {
         let mut code = SYNC_PAIR_CODE.lock().map_err(|e| e.to_string())?;
         *code = Some(pair_code.clone());
     }
 
+    let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
+    {
+        let mut guard = SYNC_SHUTDOWN_TX.lock().map_err(|e| e.to_string())?;
+        *guard = Some(shutdown_tx);
+    }
+
     let state_pair_code = pair_code.clone();
-    let state_vault_path = vault_path.clone();
+    let app_handle = app.clone();
+
+    SYNC_PORT.store(port, Ordering::Relaxed);
 
     tauri::async_runtime::spawn(async move {
         println!("启动同步服务 (port={port}, pair_code={state_pair_code})");
-        if let Err(e) = sync::start_server(port, state_pair_code, state_vault_path).await {
+        if let Err(e) =
+            sync::start_server(port, state_pair_code, vault_path, app_handle, shutdown_rx).await
+        {
             eprintln!("同步服务异常退出: {e}");
         }
-        SYNC_PORT.store(0, std::sync::atomic::Ordering::Relaxed);
+        SYNC_PORT.store(0, Ordering::Relaxed);
+        if let Ok(mut code) = SYNC_PAIR_CODE.lock() {
+            *code = None;
+        }
+        if let Ok(mut guard) = SYNC_SHUTDOWN_TX.lock() {
+            *guard = None;
+        }
     });
 
-    SYNC_PORT.store(port, std::sync::atomic::Ordering::Relaxed);
     Ok(pair_code)
 }
 
 /// 停止同步服务
 #[tauri::command]
 async fn stop_sync_server() -> Result<(), String> {
-    let prev = SYNC_PORT.load(std::sync::atomic::Ordering::Relaxed);
+    let prev = SYNC_PORT.load(Ordering::Relaxed);
     if prev == 0 {
         return Err("同步服务未运行".to_string());
     }
 
-    SYNC_PORT.store(0, std::sync::atomic::Ordering::Relaxed);
+    let tx = {
+        let mut guard = SYNC_SHUTDOWN_TX.lock().map_err(|e| e.to_string())?;
+        guard.take()
+    };
+
+    if let Some(tx) = tx {
+        let _ = tx.send(());
+    } else {
+        SYNC_PORT.store(0, Ordering::Relaxed);
+        return Err("同步服务停止信号不可用".to_string());
+    }
+
+    // 等待服务退出并清理端口标志
+    for _ in 0..50 {
+        if SYNC_PORT.load(Ordering::Relaxed) == 0 {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+
     {
         let mut code = SYNC_PAIR_CODE.lock().map_err(|e| e.to_string())?;
         *code = None;
     }
 
-    // 服务端 axum 在监听到端口释放后会退出
-    // 客户端通过 HTTP 请求超时来检测服务是否离线
     Ok(())
 }
 
 /// 获取同步服务状态
 #[tauri::command]
 async fn get_sync_status() -> Result<serde_json::Value, String> {
-    let port = SYNC_PORT.load(std::sync::atomic::Ordering::Relaxed);
+    let port = SYNC_PORT.load(Ordering::Relaxed);
     let pair_code = SYNC_PAIR_CODE.lock().map_err(|e| e.to_string())?;
     Ok(serde_json::json!({
         "running": port != 0,
@@ -159,7 +192,6 @@ async fn get_sync_status() -> Result<serde_json::Value, String> {
 async fn get_local_ip() -> Result<String, String> {
     let socket = std::net::UdpSocket::bind("0.0.0.0:0")
         .map_err(|e| format!("无法创建 socket: {e}"))?;
-    // 连接到一个公共地址以获取本机 IP（实际不发送数据）
     socket
         .connect("10.255.255.255:1")
         .map_err(|e| format!("无法获取本机 IP: {e}"))?;
@@ -169,24 +201,36 @@ async fn get_local_ip() -> Result<String, String> {
     Ok(addr.ip().to_string())
 }
 
+#[tauri::command]
+async fn sync_ping(remote_url: String) -> Result<bool, String> {
+    sync::client_ping(&remote_url).await
+}
+
+#[tauri::command]
+async fn sync_pull(remote_url: String, pair_code: String) -> Result<Option<String>, String> {
+    sync::client_pull(&remote_url, &pair_code).await
+}
+
+#[tauri::command]
+async fn sync_push(remote_url: String, pair_code: String, envelope: String) -> Result<(), String> {
+    sync::client_push(&remote_url, &pair_code, &envelope).await
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default();
 
-    // 单实例：重复启动时唤起已驻留托盘的窗口（桌面专用）
     #[cfg(desktop)]
     let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
         show_main_window(app);
     }));
 
-    // 开机自启（桌面专用）
     #[cfg(desktop)]
     let builder = builder.plugin(tauri_plugin_autostart::init(
         tauri_plugin_autostart::MacosLauncher::LaunchAgent,
         Some(vec!["--autostart"]),
     ));
 
-    // 通用插件（桌面 + 移动端均支持）
     let builder = builder
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_dialog::init())
@@ -204,10 +248,12 @@ pub fn run() {
         start_sync_server,
         stop_sync_server,
         get_sync_status,
-        get_local_ip
+        get_local_ip,
+        sync_ping,
+        sync_pull,
+        sync_push
     ]);
 
-    // 桌面专用 setup：托盘图标与右键菜单
     #[cfg(desktop)]
     let builder = builder.setup(|app| {
         let show = MenuItem::with_id(app, "show", "显示主界面", true, None::<&str>)?;
@@ -225,7 +271,6 @@ pub fn run() {
                 _ => {}
             })
             .on_tray_icon_event(|tray, event| {
-                // 左键单击托盘图标恢复主窗口
                 if let TrayIconEvent::Click {
                     button: MouseButton::Left,
                     button_state: MouseButtonState::Up,
@@ -240,7 +285,6 @@ pub fn run() {
         Ok(())
     });
 
-    // 桌面专用窗口事件：关闭时隐藏到托盘而不是退出
     #[cfg(desktop)]
     let builder = builder.on_window_event(|window, event| {
         if let WindowEvent::CloseRequested { api, .. } = event {
@@ -253,7 +297,6 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while running tauri application")
         .run(|_app, _event| {
-            // macOS 上点击 Dock 图标恢复已隐藏的主窗口
             #[cfg(target_os = "macos")]
             if let tauri::RunEvent::Reopen { .. } = _event {
                 show_main_window(_app);

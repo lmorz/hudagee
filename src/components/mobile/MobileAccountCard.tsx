@@ -1,15 +1,9 @@
-import { ChevronDown, ChevronUp, Copy, Edit, Eye, EyeOff, Send, Trash2 } from "lucide-solid";
+import { ChevronDown, ChevronUp, Edit, Send, Trash2 } from "lucide-solid";
 import { createSignal, Show } from "solid-js";
 import type { AccountEntry } from "../../types";
 
 type MobileAccountCardProps = {
   account: AccountEntry;
-  isPasswordVisible: boolean;
-  isUsernameVisible: boolean;
-  onTogglePassword: (accountId: string) => void;
-  onToggleUsername: (accountId: string) => void;
-  onCopyUsername: (account: AccountEntry) => void;
-  onCopyPassword: (account: AccountEntry) => void;
   onShare: (account: AccountEntry) => void;
   onEdit: (account: AccountEntry) => void;
   onDelete: (account: AccountEntry) => void;
@@ -21,7 +15,6 @@ export function MobileAccountCard(props: MobileAccountCardProps) {
 
   return (
     <div class="mobile-card" classList={{ "is-expanded": expanded() }}>
-      {/* 卡片概览 — 始终可见 */}
       <button
         class="mobile-card-header"
         type="button"
@@ -37,65 +30,23 @@ export function MobileAccountCard(props: MobileAccountCardProps) {
         </div>
       </button>
 
-      {/* 展开详情 */}
       <Show when={expanded()}>
         <div class="mobile-card-body">
-          <div class="mobile-card-field">
-            <span class="mobile-field-label">账号</span>
-            <div class="mobile-field-row">
-              <span class="mobile-field-value mono">
-                {props.isUsernameVisible ? account().username : "••••••"}
-              </span>
-              <button
-                class="mobile-field-btn"
-                type="button"
-                onClick={() => props.onToggleUsername(account().id)}
-                aria-label={props.isUsernameVisible ? "隐藏账号" : "显示账号"}
-              >
-                {props.isUsernameVisible ? <EyeOff size={16} /> : <Eye size={16} />}
-              </button>
-              <button
-                class="mobile-field-btn"
-                type="button"
-                onClick={() => props.onCopyUsername(account())}
-                aria-label="复制账号"
-              >
-                <Copy size={16} />
-              </button>
-            </div>
-          </div>
-
-          <div class="mobile-card-field">
-            <span class="mobile-field-label">密码</span>
-            <div class="mobile-field-row">
-              <span class="mobile-field-value mono">
-                {props.isPasswordVisible ? account().password : "••••••"}
-              </span>
-              <button
-                class="mobile-field-btn"
-                type="button"
-                onClick={() => props.onTogglePassword(account().id)}
-                aria-label={props.isPasswordVisible ? "隐藏密码" : "显示密码"}
-              >
-                {props.isPasswordVisible ? <EyeOff size={16} /> : <Eye size={16} />}
-              </button>
-              <button
-                class="mobile-field-btn"
-                type="button"
-                onClick={() => props.onCopyPassword(account())}
-                aria-label="复制密码"
-              >
-                <Copy size={16} />
-              </button>
-            </div>
-          </div>
-
-          <Show when={account().note}>
+          <div class="mobile-card-creds">
             <div class="mobile-card-field">
-              <span class="mobile-field-label">备注</span>
-              <span class="mobile-field-value">{account().note}</span>
+              <span class="mobile-field-label">账号</span>
+              <span class="mobile-field-value mono">{account().username}</span>
             </div>
-          </Show>
+            <div class="mobile-card-field">
+              <span class="mobile-field-label">密码</span>
+              <span class="mobile-field-value mono">{account().password}</span>
+            </div>
+          </div>
+
+          <div class="mobile-card-field">
+            <span class="mobile-field-label">备注</span>
+            <span class="mobile-field-value">{account().note || "无"}</span>
+          </div>
 
           <div class="mobile-card-actions">
             <button

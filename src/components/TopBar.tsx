@@ -1,4 +1,4 @@
-import { Download, FileUp, Lock, Plus, Settings, Trash2 } from "lucide-solid";
+import { Download, FileUp, Plus, Settings, Trash2 } from "lucide-solid";
 import type { ServerGroup } from "../types";
 import { ServerSelect } from "./ServerSelect";
 
@@ -14,7 +14,6 @@ type TopBarProps = {
   onToggleSettings: () => void;
   onImport: () => void;
   onExport: () => void;
-  onLock: () => void;
 };
 
 export function TopBar(props: TopBarProps) {
@@ -57,9 +56,6 @@ export function TopBar(props: TopBarProps) {
         </button>
         <button class="ghost-button compact" type="button" onClick={props.onExport}>
           <Download size={13} />导出
-        </button>
-        <button class="ghost-button compact icon-only" type="button" onClick={props.onLock} title="锁定">
-          <Lock size={13} />
         </button>
       </div>
     </header>

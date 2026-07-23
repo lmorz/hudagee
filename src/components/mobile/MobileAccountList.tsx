@@ -5,12 +5,6 @@ import { MobileAccountCard } from "./MobileAccountCard";
 type MobileAccountListProps = {
   accounts: AccountEntry[];
   hasServer: boolean;
-  visiblePasswords: Set<string>;
-  visibleUsernames: Set<string>;
-  onTogglePassword: (accountId: string) => void;
-  onToggleUsername: (accountId: string) => void;
-  onCopyUsername: (account: AccountEntry) => void;
-  onCopyPassword: (account: AccountEntry) => void;
   onShare: (account: AccountEntry) => void;
   onEdit: (account: AccountEntry) => void;
   onDelete: (account: AccountEntry) => void;
@@ -31,12 +25,6 @@ export function MobileAccountList(props: MobileAccountListProps) {
             {(account) => (
               <MobileAccountCard
                 account={account}
-                isPasswordVisible={props.visiblePasswords.has(account.id) || props.visiblePasswords.size === 0}
-                isUsernameVisible={props.visibleUsernames.has(account.id) || props.visibleUsernames.size === 0}
-                onTogglePassword={props.onTogglePassword}
-                onToggleUsername={props.onToggleUsername}
-                onCopyUsername={props.onCopyUsername}
-                onCopyPassword={props.onCopyPassword}
                 onShare={props.onShare}
                 onEdit={props.onEdit}
                 onDelete={props.onDelete}

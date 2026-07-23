@@ -1,10 +1,13 @@
-import { ClipboardPaste, FolderPlus, Lock, Network, Plus, Search, Settings } from "lucide-solid";
-import { createMemo, createSignal, Show } from "solid-js";
+import { ClipboardPaste, FolderPlus, Plus, Search, Settings } from "lucide-solid";
+import { createEffect, createMemo, createSignal, Show } from "solid-js";
 import { Toaster, toast } from "solid-sonner";
 import type { AccountEntry, AccountForm, ServerGroup, VaultData } from "../../types";
 import { buildShareText, copyText, parseShareText, readClipboardText } from "../../lib/clipboard";
-import { isTauriRuntime } from "../../lib/tauri";
-import { resolveSelectedServerId, writeLastSelectedServerId } from "../../lib/preferences";
+import {
+  readLastSelectedServerId,
+  resolveSelectedServerId,
+  writeLastSelectedServerId,
+} from "../../lib/preferences";
 import {
   createAccount,
   createServer,
@@ -17,13 +20,12 @@ import { ConfirmDialog } from "../ConfirmDialog";
 import { MobileAccountForm } from "./MobileAccountForm";
 import { MobileAccountList } from "./MobileAccountList";
 import { MobileSettings } from "./MobileSettings";
-import { SyncPanel } from "./SyncPanel";
 
 type MobileAppProps = {
   vault: VaultData;
   masterPassword: string;
-  onLock: () => void;
   onVaultChange: (vault: VaultData) => void;
+  onMasterPasswordChange: (password: string) => void;
 };
 
 type MobilePendingDelete =
@@ -41,29 +43,35 @@ const emptyForm: AccountForm = {
 };
 
 export function MobileApp(props: MobileAppProps) {
-  const [selectedServerId, setSelectedServerId] = createSignal<string | null>(null);
+  const [selectedServerId, setSelectedServerId] = createSignal<string | null>(readLastSelectedServerId());
   const [query, setQuery] = createSignal("");
 
   const [form, setForm] = createSignal<AccountForm>(emptyForm);
   const [editingId, setEditingId] = createSignal<string | null>(null);
   const [isFormOpen, setIsFormOpen] = createSignal(false);
   const [showSettings, setShowSettings] = createSignal(false);
-  const [showSync, setShowSync] = createSignal(false);
   const [showAddGroup, setShowAddGroup] = createSignal(false);
   const [newGroupName, setNewGroupName] = createSignal("");
   const [newProfession, setNewProfession] = createSignal("");
   const [currentMasterPassword, setCurrentMasterPassword] = createSignal("");
   const [nextMasterPassword, setNextMasterPassword] = createSignal("");
   const [confirmNextMasterPassword, setConfirmNextMasterPassword] = createSignal("");
-  const [visiblePasswords, setVisiblePasswords] = createSignal(new Set<string>());
-  const [visibleUsernames, setVisibleUsernames] = createSignal(new Set<string>());
   const [pendingDelete, setPendingDelete] = createSignal<MobilePendingDelete>(null);
   const [isSaving, setIsSaving] = createSignal(false);
 
-  // Initialize selected server
   const sortedServers = createMemo(() =>
     [...props.vault.servers].sort((left, right) => left.sortOrder - right.sortOrder),
   );
+
+  createEffect(() => {
+    const next = resolveSelectedServerId(sortedServers(), selectedServerId() ?? readLastSelectedServerId());
+    if (next !== selectedServerId()) {
+      setSelectedServerId(next);
+      if (next) {
+        writeLastSelectedServerId(next);
+      }
+    }
+  });
 
   const activeServer = createMemo(() =>
     sortedServers().find((server) => server.id === selectedServerId()) ?? sortedServers()[0] ?? null,
@@ -225,24 +233,6 @@ export function MobileApp(props: MobileAppProps) {
     toast.success(message);
   }
 
-  function togglePassword(accountId: string) {
-    setVisiblePasswords((current) => {
-      const next = new Set(current);
-      if (next.has(accountId)) next.delete(accountId);
-      else next.add(accountId);
-      return next;
-    });
-  }
-
-  function toggleUsername(accountId: string) {
-    setVisibleUsernames((current) => {
-      const next = new Set(current);
-      if (next.has(accountId)) next.delete(accountId);
-      else next.add(accountId);
-      return next;
-    });
-  }
-
   function closeForm() {
     setEditingId(null);
     setForm({ ...emptyForm, serverId: activeServer()?.id ?? "" });
@@ -293,16 +283,8 @@ export function MobileApp(props: MobileAppProps) {
             </div>
           </div>
           <div class="mobile-topbar-end">
-            <Show when={isTauriRuntime()}>
-              <button class="mobile-topbar-btn" type="button" onClick={() => setShowSync(true)} aria-label="同步">
-                <Network size={18} />
-              </button>
-            </Show>
             <button class="mobile-topbar-btn" type="button" onClick={() => setShowSettings(true)} aria-label="设置">
               <Settings size={18} />
-            </button>
-            <button class="mobile-topbar-btn" type="button" onClick={props.onLock} aria-label="锁定">
-              <Lock size={18} />
             </button>
           </div>
         </header>
@@ -341,12 +323,6 @@ export function MobileApp(props: MobileAppProps) {
         <MobileAccountList
           accounts={filteredAccounts()}
           hasServer={sortedServers().length > 0}
-          visiblePasswords={visiblePasswords()}
-          visibleUsernames={visibleUsernames()}
-          onTogglePassword={togglePassword}
-          onToggleUsername={toggleUsername}
-          onCopyUsername={(account) => copyValue(account.username, `已复制「${account.characterName}」的账号`)}
-          onCopyPassword={(account) => copyValue(account.password, `已复制「${account.characterName}」的密码`)}
           onShare={(account) => copyValue(buildShareText(account), `已复制「${account.characterName}」的分享信息`)}
           onEdit={startEdit}
           onDelete={(account) => setPendingDelete({ type: "account", item: account })}
@@ -390,6 +366,9 @@ export function MobileApp(props: MobileAppProps) {
             currentMasterPassword={currentMasterPassword()}
             nextMasterPassword={nextMasterPassword()}
             confirmNextMasterPassword={confirmNextMasterPassword()}
+            vault={props.vault}
+            masterPassword={props.masterPassword}
+            onVaultChange={props.onVaultChange}
             onNewProfessionInput={setNewProfession}
             onAddProfession={async (event) => {
               event.preventDefault();
@@ -443,6 +422,7 @@ export function MobileApp(props: MobileAppProps) {
               try {
                 setIsSaving(true);
                 await saveVault(props.vault, nextMasterPassword());
+                props.onMasterPasswordChange(nextMasterPassword());
                 setCurrentMasterPassword("");
                 setNextMasterPassword("");
                 setConfirmNextMasterPassword("");
@@ -454,31 +434,6 @@ export function MobileApp(props: MobileAppProps) {
               }
             }}
             onClose={() => setShowSettings(false)}
-          />
-        </Show>
-
-        {/* 同步面板（仅 Tauri 环境） */}
-        <Show when={showSync()}>
-          <SyncPanel
-            envelope={(() => {
-              // 同步时使用当前的 vault JSON 作为 envelope
-              try {
-                return JSON.stringify({
-                  schemaVersion: 1,
-                  crypto: { algorithm: "AES-GCM", kdf: "PBKDF2", hash: "SHA-256", iterations: 310000, salt: "", nonce: "" },
-                  ciphertext: btoa(JSON.stringify(props.vault)),
-                } as unknown);
-              } catch {
-                return "";
-              }
-            })()}
-            onEnvelopeUpdate={(_envelope) => {
-              // 当拉取到新数据时，通知上层刷新 vault
-              // 实际解密和合并由 App 层完成
-              toast.success("数据已同步，请返回主界面查看");
-              setShowSync(false);
-            }}
-            onClose={() => setShowSync(false)}
           />
         </Show>
       </div>

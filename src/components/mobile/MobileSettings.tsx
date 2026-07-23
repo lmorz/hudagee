@@ -1,7 +1,9 @@
 import { ArrowLeft, Plus, X } from "lucide-solid";
-import { For } from "solid-js";
-import type { ServerGroup } from "../../types";
+import { For, Show } from "solid-js";
+import type { ServerGroup, VaultData } from "../../types";
+import { isTauriRuntime } from "../../lib/tauri";
 import { AppearanceSettings } from "../AppearanceSettings";
+import { SyncPanel } from "../SyncPanel";
 
 type MobileSettingsProps = {
   servers: ServerGroup[];
@@ -10,6 +12,9 @@ type MobileSettingsProps = {
   currentMasterPassword: string;
   nextMasterPassword: string;
   confirmNextMasterPassword: string;
+  vault: VaultData;
+  masterPassword: string;
+  onVaultChange: (vault: VaultData) => void;
   onNewProfessionInput: (value: string) => void;
   onAddProfession: (event: Event) => void;
   onDeleteProfession: (profession: string) => void;
@@ -33,13 +38,23 @@ export function MobileSettings(props: MobileSettingsProps) {
       </div>
 
       <div class="mobile-settings-body">
-        {/* 外观 */}
         <section class="mobile-settings-section">
           <h3 class="mobile-settings-section-title">外观</h3>
           <AppearanceSettings />
         </section>
 
-        {/* 分组配置 */}
+        <Show when={isTauriRuntime()}>
+          <section class="mobile-settings-section">
+            <h3 class="mobile-settings-section-title">局域网同步</h3>
+            <SyncPanel
+              variant="mobile"
+              vault={props.vault}
+              masterPassword={props.masterPassword}
+              onVaultChange={props.onVaultChange}
+            />
+          </section>
+        </Show>
+
         <section class="mobile-settings-section">
           <h3 class="mobile-settings-section-title">分组配置</h3>
           <div class="mobile-settings-list">
@@ -67,13 +82,9 @@ export function MobileSettings(props: MobileSettingsProps) {
           </div>
         </section>
 
-        {/* 职业配置 */}
         <section class="mobile-settings-section">
           <h3 class="mobile-settings-section-title">职业配置</h3>
-          <form
-            class="mobile-settings-inline-form"
-            onSubmit={props.onAddProfession}
-          >
+          <form class="mobile-settings-inline-form" onSubmit={props.onAddProfession}>
             <input
               value={props.newProfession}
               onInput={(event) => props.onNewProfessionInput(event.currentTarget.value)}
@@ -101,7 +112,6 @@ export function MobileSettings(props: MobileSettingsProps) {
           </div>
         </section>
 
-        {/* 重置主密码 */}
         <section class="mobile-settings-section">
           <h3 class="mobile-settings-section-title">重置主密码</h3>
           <form class="mobile-settings-form" onSubmit={props.onResetMasterPassword}>

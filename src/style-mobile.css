@@ -10,8 +10,9 @@
   --mobile-search-height: 40px;
 }
 
-/* --- 重置 body 约束 --- */
-body:has(.mobile-app-shell) {
+/* --- 重置 body 约束（认证页 + 主界面） --- */
+body:has(.mobile-app-shell),
+body:has(.mobile-auth-shell) {
   min-width: unset;
   overflow: auto;
 }
@@ -20,8 +21,11 @@ body:has(.mobile-app-shell) {
 .mobile-app-shell {
   display: flex;
   flex-direction: column;
+  box-sizing: border-box;
   min-height: 100dvh;
-  padding-bottom: calc(var(--mobile-fab-size) + 20px);
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+  padding-bottom: calc(var(--mobile-fab-size) + 20px + env(safe-area-inset-bottom, 0px));
 }
 
 /* --- 顶栏 --- */
@@ -29,8 +33,9 @@ body:has(.mobile-app-shell) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: var(--mobile-topbar-height);
-  padding: 0 10px;
+  box-sizing: border-box;
+  min-height: calc(var(--mobile-topbar-height) + env(safe-area-inset-top, 0px));
+  padding: env(safe-area-inset-top, 0px) 10px 0;
   border-bottom: 1px solid var(--mobile-border);
   background: rgba(2, 6, 23, 0.42);
   gap: 8px;
@@ -187,6 +192,13 @@ body:has(.mobile-app-shell) {
   display: flex;
   flex-direction: column;
   gap: 3px;
+  min-width: 0;
+}
+
+.mobile-card-creds {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
 }
 
 .mobile-field-label {
@@ -213,23 +225,6 @@ body:has(.mobile-app-shell) {
 .mobile-field-value.mono {
   font-family: var(--font-mono);
   font-size: 13px;
-}
-
-.mobile-field-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  min-width: 32px;
-  border: 1px solid var(--mobile-border);
-  border-radius: var(--mobile-radius);
-  background: transparent;
-  color: #94a3b8;
-}
-
-.mobile-field-btn:active {
-  background: rgba(148, 163, 184, 0.12);
 }
 
 /* --- 卡片操作按钮 --- */
@@ -277,6 +272,10 @@ body:has(.mobile-app-shell) {
   z-index: 30;
   display: flex;
   flex-direction: column;
+  box-sizing: border-box;
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
   background: rgba(5, 8, 22, 0.98);
   backdrop-filter: blur(4px);
 }
@@ -285,8 +284,9 @@ body:has(.mobile-app-shell) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: var(--mobile-topbar-height);
-  padding: 0 10px;
+  box-sizing: border-box;
+  min-height: calc(var(--mobile-topbar-height) + env(safe-area-inset-top, 0px));
+  padding: env(safe-area-inset-top, 0px) 10px 0;
   border-bottom: 1px solid var(--mobile-border);
 }
 
@@ -527,9 +527,18 @@ body:has(.mobile-app-shell) {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
+  box-sizing: border-box;
   min-height: 100dvh;
-  padding: 20px 16px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: max(16px, env(safe-area-inset-top, 0px)) 16px max(24px, env(safe-area-inset-bottom, 0px));
+}
+
+@media (min-height: 560px) {
+  .mobile-auth-shell {
+    justify-content: center;
+  }
 }
 
 .mobile-auth-card {
@@ -538,6 +547,7 @@ body:has(.mobile-app-shell) {
   gap: 12px;
   width: 100%;
   max-width: 320px;
+  margin: 12px 0;
   padding: 20px;
   border: 1px solid var(--mobile-border);
   border-radius: 8px;
@@ -561,7 +571,7 @@ body:has(.mobile-app-shell) {
 }
 
 .mobile-auth-card input {
-  font-size: 15px;
+  font-size: 16px;
   padding: 10px;
   border: 1px solid var(--mobile-border);
   border-radius: var(--mobile-radius);
@@ -623,8 +633,8 @@ body:has(.mobile-app-shell) {
 /* --- 浮动次要按钮 --- */
 .mobile-fab-group {
   position: fixed;
-  right: 16px;
-  bottom: 20px;
+  right: calc(16px + env(safe-area-inset-right, 0px));
+  bottom: calc(20px + env(safe-area-inset-bottom, 0px));
   z-index: 20;
   display: flex;
   flex-direction: column;
@@ -666,4 +676,65 @@ body:has(.mobile-app-shell) {
 
 .mobile-fab-secondary:active {
   background: rgba(30, 41, 59, 0.92);
+}
+
+/* --- 同步面板（移动） --- */
+.sync-panel-mobile {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sync-panel-mobile .sync-mode-switch {
+  display: flex;
+  gap: 6px;
+  padding: 8px;
+}
+
+.sync-panel-mobile .sync-card,
+.sync-panel-mobile .sync-hint {
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sync-panel-mobile .sync-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.sync-panel-mobile .sync-host-port {
+  display: grid;
+  grid-template-columns: 1fr 88px;
+  gap: 8px;
+}
+
+.sync-panel-mobile .sync-actions > button {
+  flex: 1;
+}
+
+.sync-panel-mobile .sync-running {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #4ade80;
+  font-size: 14px;
+}
+
+.sync-panel-mobile .sync-meta {
+  font-size: 13px;
+  color: #94a3b8;
+  display: grid;
+  gap: 4px;
+}
+
+.sync-panel-mobile .sync-hint {
+  font-size: 12px;
+  color: #94a3b8;
+  line-height: 1.6;
+}
+
+.sync-panel-mobile .sync-hint p {
+  margin: 0;
 }

@@ -13,20 +13,43 @@ val tauriProperties = Properties().apply {
     }
 }
 
+// 签名配置从本地 keystore.properties 读取（勿提交仓库）
+val keystorePropertiesFile = rootProject.file("keystore.properties")
+val keystoreProperties = Properties().apply {
+    if (keystorePropertiesFile.exists()) {
+        keystorePropertiesFile.inputStream().use { load(it) }
+    }
+}
+val hasReleaseKeystore = keystorePropertiesFile.exists()
+    && keystoreProperties.getProperty("storeFile") != null
+    && keystoreProperties.getProperty("storePassword") != null
+    && keystoreProperties.getProperty("keyAlias") != null
+    && keystoreProperties.getProperty("keyPassword") != null
+
 android {
     compileSdk = 36
     namespace = "com.hudagee.account_manager"
     defaultConfig {
-        manifestPlaceholders["usesCleartextTraffic"] = "false"
+        // 局域网同步使用 HTTP；vault 本身已 AES 加密
+        manifestPlaceholders["usesCleartextTraffic"] = "true"
         applicationId = "com.hudagee.account_manager"
         minSdk = 24
         targetSdk = 36
         versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()
         versionName = tauriProperties.getProperty("tauri.android.versionName", "1.0")
     }
+    signingConfigs {
+        if (hasReleaseKeystore) {
+            create("release") {
+                storeFile = rootProject.file(keystoreProperties.getProperty("storeFile")!!)
+                storePassword = keystoreProperties.getProperty("storePassword")
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+            }
+        }
+    }
     buildTypes {
         getByName("debug") {
-            manifestPlaceholders["usesCleartextTraffic"] = "true"
             isDebuggable = true
             isJniDebuggable = true
             isMinifyEnabled = false
@@ -37,6 +60,9 @@ android {
             }
         }
         getByName("release") {
+            if (hasReleaseKeystore) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             isMinifyEnabled = true
             proguardFiles(
                 *fileTree(".") { include("**/*.pro") }

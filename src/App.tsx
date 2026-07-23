@@ -1,9 +1,11 @@
 import { ClipboardPaste, Plus, Search } from "lucide-solid";
-import { createEffect, createMemo, createSignal, Match, onMount, Show, Switch } from "solid-js";
+import { listen } from "@tauri-apps/api/event";
+import { createEffect, createMemo, createSignal, Match, onCleanup, onMount, Show, Switch } from "solid-js";
 import { Toaster, toast } from "solid-sonner";
 import { AccountFormPanel } from "./components/AccountFormPanel";
 import { AccountList } from "./components/AccountList";
 import { AuthView } from "./components/AuthView";
+import { MobileAuthView } from "./components/mobile/MobileAuthView";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { ImportModeDialog } from "./components/ImportModeDialog";
 import { SettingsPanel } from "./components/SettingsPanel";
@@ -127,6 +129,39 @@ function App() {
       if (readLaunchAtStartupPreference()) {
         toast.warning("开机启动设置未能同步，可在配置中重新开启");
       }
+    });
+  });
+
+  // 同步服务端收到推送后，热加载磁盘上的最新 vault
+  createEffect(() => {
+    if (!isTauriRuntime() || authMode() !== "ready" || !masterPassword()) {
+      return;
+    }
+
+    const password = masterPassword();
+    let cancelled = false;
+    let unlisten: (() => void) | undefined;
+
+    void listen("sync-vault-updated", async () => {
+      if (cancelled) return;
+      try {
+        const next = await unlockVault(password);
+        setVault(next);
+        toast.success("已从局域网同步接收更新");
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "同步更新加载失败");
+      }
+    }).then((fn) => {
+      if (cancelled) {
+        fn();
+        return;
+      }
+      unlisten = fn;
+    });
+
+    onCleanup(() => {
+      cancelled = true;
+      unlisten?.();
     });
   });
 
@@ -846,68 +881,93 @@ function App() {
     }
   }
 
-  function lockApp() {
-    if (isWriteBlocked()) {
-      return;
-    }
-    if (importDialog()) {
-      toast.info("请先完成或取消当前导入操作");
-      return;
-    }
-
-    setVault(createEmptyVault());
-    setMasterPassword("");
-    setConfirmPassword("");
-    setCurrentMasterPassword("");
-    setNextMasterPassword("");
-    setConfirmNextMasterPassword("");
-    setSelectedServerId(null);
-    setImportDialog(null);
-    setIsImporting(false);
-    setAuthMode("unlock");
-    toast.info("应用已锁定");
-  }
-
   return (
     <>
       <Toaster position="top-center" richColors duration={2600} visibleToasts={2} gap={6} offset={8} />
       <Switch>
         <Match when={authMode() === "loading"}>
-          <AuthView
-            mode="loading"
-            masterPassword={masterPassword()}
-            confirmPassword={confirmPassword()}
-            error={error()}
-            onMasterPasswordInput={setMasterPassword}
-            onConfirmPasswordInput={setConfirmPassword}
-            onSubmit={handleAuth}
-          />
+          <Show
+            when={isMobilePlatform()}
+            fallback={
+              <AuthView
+                mode="loading"
+                masterPassword={masterPassword()}
+                confirmPassword={confirmPassword()}
+                error={error()}
+                onMasterPasswordInput={setMasterPassword}
+                onConfirmPasswordInput={setConfirmPassword}
+                onSubmit={handleAuth}
+              />
+            }
+          >
+            <MobileAuthView
+              mode="loading"
+              masterPassword={masterPassword()}
+              confirmPassword={confirmPassword()}
+              error={error()}
+              onMasterPasswordInput={setMasterPassword}
+              onConfirmPasswordInput={setConfirmPassword}
+              onSubmit={handleAuth}
+            />
+          </Show>
         </Match>
 
         <Match when={authMode() === "setup" || authMode() === "unlock"}>
-          <AuthView
-            mode={authMode() === "setup" ? "setup" : "unlock"}
-            masterPassword={masterPassword()}
-            confirmPassword={confirmPassword()}
-            error={error()}
-            onMasterPasswordInput={setMasterPassword}
-            onConfirmPasswordInput={setConfirmPassword}
-            onSubmit={handleAuth}
-          />
+          <Show
+            when={isMobilePlatform()}
+            fallback={
+              <AuthView
+                mode={authMode() === "setup" ? "setup" : "unlock"}
+                masterPassword={masterPassword()}
+                confirmPassword={confirmPassword()}
+                error={error()}
+                onMasterPasswordInput={setMasterPassword}
+                onConfirmPasswordInput={setConfirmPassword}
+                onSubmit={handleAuth}
+              />
+            }
+          >
+            <MobileAuthView
+              mode={authMode() === "setup" ? "setup" : "unlock"}
+              masterPassword={masterPassword()}
+              confirmPassword={confirmPassword()}
+              error={error()}
+              onMasterPasswordInput={setMasterPassword}
+              onConfirmPasswordInput={setConfirmPassword}
+              onSubmit={handleAuth}
+            />
+          </Show>
         </Match>
 
         <Match when={authMode() === "corrupted"}>
-          <AuthView
-            mode="corrupted"
-            error={error()}
-            masterPassword={masterPassword()}
-            isBusy={isImporting()}
-            onMasterPasswordInput={setMasterPassword}
-            onRestoreFromBackup={() => {
-              void restoreFromCorruptedBackup();
-            }}
-            onRecreateVault={() => setPendingRecreate(true)}
-          />
+          <Show
+            when={isMobilePlatform()}
+            fallback={
+              <AuthView
+                mode="corrupted"
+                error={error()}
+                masterPassword={masterPassword()}
+                isBusy={isImporting()}
+                onMasterPasswordInput={setMasterPassword}
+                onRestoreFromBackup={() => {
+                  void restoreFromCorruptedBackup();
+                }}
+                onRecreateVault={() => setPendingRecreate(true)}
+              />
+            }
+          >
+            <MobileAuthView
+              mode="corrupted"
+              error={error()}
+              masterPassword={masterPassword()}
+              isBusy={isImporting()}
+              onMasterPasswordInput={setMasterPassword}
+              onRestoreFromBackup={() => {
+                void restoreFromCorruptedBackup();
+              }}
+              onRecreateVault={() => setPendingRecreate(true)}
+            />
+          </Show>
         </Match>
 
       <Match when={authMode() === "ready"}>
@@ -915,8 +975,8 @@ function App() {
           <MobileApp
             vault={vault()}
             masterPassword={masterPassword()}
-            onLock={lockApp}
             onVaultChange={setVault}
+            onMasterPasswordChange={setMasterPassword}
           />
         }>
         <div class="app-shell">
@@ -942,7 +1002,6 @@ function App() {
               onToggleSettings={() => setShowSettings(!showSettings())}
               onImport={importBackup}
               onExport={exportBackup}
-              onLock={lockApp}
             />
 
             <div class="summary-line">
@@ -1016,6 +1075,9 @@ function App() {
                 currentMasterPassword={currentMasterPassword()}
                 nextMasterPassword={nextMasterPassword()}
                 confirmNextMasterPassword={confirmNextMasterPassword()}
+                vault={vault()}
+                masterPassword={masterPassword()}
+                onVaultChange={setVault}
                 onNewProfessionInput={setNewProfession}
                 onAddProfession={addProfession}
                 onDeleteProfession={deleteProfession}
