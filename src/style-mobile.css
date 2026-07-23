@@ -270,32 +270,6 @@ body:has(.mobile-app-shell) {
   background: rgba(248, 113, 113, 0.1);
 }
 
-/* --- 浮动操作按钮 (FAB) --- */
-.mobile-fab-group {
-  position: fixed;
-  right: 16px;
-  bottom: 20px;
-  z-index: 20;
-}
-
-.mobile-fab {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: var(--mobile-fab-size);
-  height: var(--mobile-fab-size);
-  border: none;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #60a5fa, #22d3ee 58%, #a78bfa);
-  color: #fff;
-  box-shadow: 0 4px 16px rgba(34, 211, 238, 0.3);
-  -webkit-tap-highlight-color: transparent;
-}
-
-.mobile-fab:active {
-  transform: scale(0.95);
-}
-
 /* --- 全屏表单 --- */
 .mobile-fullscreen-form {
   position: fixed;
@@ -644,4 +618,52 @@ body:has(.mobile-app-shell) {
   border-color: rgba(56, 189, 248, 0.55) !important;
   background: rgba(14, 165, 233, 0.18) !important;
   color: #bae6fd !important;
+}
+
+/* --- 浮动次要按钮 --- */
+.mobile-fab-group {
+  position: fixed;
+  right: 16px;
+  bottom: 20px;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.mobile-fab {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--mobile-fab-size);
+  height: var(--mobile-fab-size);
+  border: none;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #60a5fa, #22d3ee 58%, #a78bfa);
+  color: #fff;
+  box-shadow: 0 4px 16px rgba(34, 211, 238, 0.3);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mobile-fab:active {
+  transform: scale(0.95);
+}
+
+.mobile-fab-secondary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(15, 23, 42, 0.92);
+  color: #94a3b8;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mobile-fab-secondary:active {
+  background: rgba(30, 41, 59, 0.92);
 }

@@ -1,12 +1,13 @@
-import { Lock, Network, Plus, Search, Settings } from "lucide-solid";
+import { ClipboardPaste, FolderPlus, Lock, Network, Plus, Search, Settings } from "lucide-solid";
 import { createMemo, createSignal, Show } from "solid-js";
 import { Toaster, toast } from "solid-sonner";
 import type { AccountEntry, AccountForm, ServerGroup, VaultData } from "../../types";
-import { buildShareText, copyText } from "../../lib/clipboard";
+import { buildShareText, copyText, parseShareText, readClipboardText } from "../../lib/clipboard";
 import { isTauriRuntime } from "../../lib/tauri";
 import { resolveSelectedServerId, writeLastSelectedServerId } from "../../lib/preferences";
 import {
   createAccount,
+  createServer,
   findDuplicateAccount,
   updateAccount,
 } from "../../lib/utils";
@@ -48,6 +49,8 @@ export function MobileApp(props: MobileAppProps) {
   const [isFormOpen, setIsFormOpen] = createSignal(false);
   const [showSettings, setShowSettings] = createSignal(false);
   const [showSync, setShowSync] = createSignal(false);
+  const [showAddGroup, setShowAddGroup] = createSignal(false);
+  const [newGroupName, setNewGroupName] = createSignal("");
   const [newProfession, setNewProfession] = createSignal("");
   const [currentMasterPassword, setCurrentMasterPassword] = createSignal("");
   const [nextMasterPassword, setNextMasterPassword] = createSignal("");
@@ -90,6 +93,54 @@ export function MobileApp(props: MobileAppProps) {
       throw saveError;
     } finally {
       setIsSaving(false);
+    }
+  }
+
+  async function addGroup(event: Event) {
+    event.preventDefault();
+    const name = newGroupName().trim();
+    if (!name) {
+      toast.error("请输入分组名称");
+      return;
+    }
+    if (props.vault.servers.some((s) => s.name.trim() === name)) {
+      toast.error("同名分组已存在");
+      return;
+    }
+    const nextServer = createServer(name, props.vault.servers.length);
+    await persist({
+      ...props.vault,
+      servers: [...props.vault.servers, nextServer],
+    });
+    setSelectedServerId(nextServer.id);
+    writeLastSelectedServerId(nextServer.id);
+    setNewGroupName("");
+    setShowAddGroup(false);
+    toast.success("分组已添加");
+  }
+
+  async function startQuickAddAccount() {
+    if (isSaving()) return;
+    try {
+      const text = await readClipboardText();
+      const parsed = parseShareText(text);
+      if (!parsed) {
+        toast.error("剪贴板内容无法识别，请先复制分享格式的账号信息");
+        return;
+      }
+      setEditingId(null);
+      setForm({
+        serverId: activeServer()?.id ?? "",
+        characterName: parsed.characterName,
+        username: parsed.username,
+        password: parsed.password,
+        profession: parsed.profession,
+        note: "",
+      });
+      setIsFormOpen(true);
+      toast.success("已从剪贴板填充账号信息");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "读取剪贴板失败");
     }
   }
 
@@ -220,15 +271,26 @@ export function MobileApp(props: MobileAppProps) {
         {/* 顶栏 */}
         <header class="mobile-topbar">
           <div class="mobile-topbar-start">
-            <ServerSelect
-              servers={sortedServers()}
-              value={selectedServerId() ?? ""}
-              title="选择分组"
-              onChange={(serverId) => {
-                setSelectedServerId(serverId);
-                writeLastSelectedServerId(serverId);
-              }}
-            />
+            <div style="display:flex;gap:4px;align-items:center">
+              <ServerSelect
+                servers={sortedServers()}
+                value={selectedServerId() ?? ""}
+                title="选择分组"
+                onChange={(serverId) => {
+                  setSelectedServerId(serverId);
+                  writeLastSelectedServerId(serverId);
+                }}
+              />
+              <button
+                class="mobile-topbar-btn"
+                type="button"
+                onClick={() => setShowAddGroup(!showAddGroup())}
+                aria-label="添加分组"
+                style="width:32px;height:32px;flex-shrink:0"
+              >
+                <FolderPlus size={16} />
+              </button>
+            </div>
           </div>
           <div class="mobile-topbar-end">
             <Show when={isTauriRuntime()}>
@@ -255,6 +317,26 @@ export function MobileApp(props: MobileAppProps) {
           />
         </div>
 
+        {/* 添加分组（折叠） */}
+        <Show when={showAddGroup()}>
+          <form
+            class="mobile-search-bar"
+            onSubmit={addGroup}
+            style="margin-top:0;border-color:rgba(56,189,248,0.3)"
+          >
+            <input
+              value={newGroupName()}
+              onInput={(event) => setNewGroupName(event.currentTarget.value)}
+              placeholder="输入新分组名称"
+              style="border:none;background:transparent;outline:none;flex:1;color:#f8fafc;font-size:15px"
+              autofocus
+            />
+            <button type="submit" style="border:none;background:transparent;color:#60a5fa;font-size:14px;font-weight:600;padding:4px 8px">
+              添加
+            </button>
+          </form>
+        </Show>
+
         {/* 角色列表 */}
         <MobileAccountList
           accounts={filteredAccounts()}
@@ -270,8 +352,17 @@ export function MobileApp(props: MobileAppProps) {
           onDelete={(account) => setPendingDelete({ type: "account", item: account })}
         />
 
-        {/* 浮动添加按钮 */}
+        {/* 浮动按钮组 */}
         <div class="mobile-fab-group">
+          <button
+            class="mobile-fab-secondary"
+            type="button"
+            onClick={startQuickAddAccount}
+            aria-label="从剪贴板快捷添加"
+            title="从剪贴板快捷添加"
+          >
+            <ClipboardPaste size={20} />
+          </button>
           <button class="mobile-fab" type="button" onClick={startCreateAccount} aria-label="添加账号">
             <Plus size={24} />
           </button>
